@@ -48,6 +48,13 @@ public class App {
             if (id != null) update("UPDATE todos SET done = CASE WHEN done = 1 THEN 0 ELSE 1 END WHERE id = ?", id);
             redirect(exchange); return;
         }
+        if (path.equals("/category") && method.equals("POST")) {
+            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            Integer id = parseInteger(formValue(body, "id"));
+            String category = normalizeCategory(formValue(body, "category"));
+            if (id != null && category != null) updateCategory(id, category);
+            redirect(exchange); return;
+        }
         if (path.equals("/delete") && method.equals("GET")) {
             Integer id = queryId(exchange);
             if (id != null) update("DELETE FROM todos WHERE id = ?", id);
@@ -90,7 +97,7 @@ public class App {
             th{height:44px;padding:8px;background:var(--ink);color:white;border-right:1px solid #b4c4c9;font-size:12px;letter-spacing:.15em}th:last-child{border-right:0}
             td{height:64px;padding:10px 14px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:#ffffffc7;vertical-align:middle}td:last-child{border-right:0}.todo-row:last-child td{border-bottom:0}
             .check{display:inline-grid;place-items:center;width:25px;height:25px;border:2px solid var(--ink);color:transparent;text-decoration:none}.check:hover{background:#d7e1e2}.done .check{background:var(--ink);color:#fff}.title{font-weight:700;overflow-wrap:anywhere}.done .title{text-decoration:line-through;color:#7d898b}
-            time{font-size:13px;color:#4f6268}.category{display:inline-block;border:1px solid #84989e;border-radius:20px;padding:4px 10px;font-size:12px;white-space:nowrap}.actions{display:flex;gap:10px;justify-content:center}.actions a{font-size:13px}.delete{color:var(--accent);text-decoration:none}.empty{padding:60px 20px;text-align:center;background:#ffffffc7;color:var(--muted)}
+            time{font-size:13px;color:#4f6268}.category-form{margin:0;text-align:center}.category-select{height:32px;border:1px solid #84989e;border-radius:20px;padding:0 9px;font-size:12px;text-align:center;text-align-last:center;cursor:pointer;background:#fff}.actions{display:flex;gap:10px;justify-content:center}.actions a{font-size:13px}.delete{color:var(--accent);text-decoration:none}.empty{padding:60px 20px;text-align:center;background:#ffffffc7;color:var(--muted)}
             @media(max-width:760px){.page{margin-top:24px}.masthead{align-items:flex-start;flex-direction:column}.summary{text-align:left}.add-form{grid-template-columns:1fr 1fr}.field:first-child{grid-column:1/-1;border-bottom:1px solid var(--line)}.field:nth-child(3){border-right:0}.add-button{grid-column:1/-1;height:48px}.toolbar{align-items:stretch;flex-direction:column}.toolbar-actions{justify-content:space-between;flex-wrap:wrap}.table-wrap{overflow-x:auto}table{min-width:720px}}
             </style></head><body><main class='page'><header class='masthead'><h1>TODO LIST<span class='flower'>✿</span></h1>
             """);
@@ -115,10 +122,12 @@ public class App {
                 html.append("<a class='check' aria-label='").append(todo.done ? "未完了に戻す" : "完了にする")
                     .append("' href='/done?id=").append(todo.id).append("'>✓</a>");
                 html.append("</td><td><time datetime='").append(escapeHtml(todo.dueAt == null ? "" : todo.dueAt)).append("'>").append(escapeHtml(formatDueAt(todo.dueAt)))
-                    .append("</time></td><td class='title'>").append(escapeHtml(todo.title)).append("</td><td><span class='category'>").append(escapeHtml(todo.category))
-                    .append("</span></td><td><div class='actions'>");
+                    .append("</time></td><td class='title'>").append(escapeHtml(todo.title)).append("</td><td><form class='category-form' method='post' action='/category'>")
+                    .append("<input type='hidden' name='id' value='").append(todo.id).append("'><select class='category-select' name='category' aria-label='")
+                    .append(escapeHtml(todo.title)).append("のカテゴリ' onchange='this.form.submit()'>").append(categoryOptions(todo.category))
+                    .append("</select><noscript><button type='submit'>変更</button></noscript></form></td><td><div class='actions'>");
                 if (!todo.done) html.append("<a href='/done?id=").append(todo.id).append("'>完了</a>");
-                html.append("<a class='delete' href='/delete?id=").append(todo.id).append("' onclick=\"return confirm('削除しますか？')\">削除</a></div></td></tr>");
+                html.append("<a class='delete' href='/delete?id=").append(todo.id).append("'>削除</a></div></td></tr>");
             }
             html.append("</tbody></table></div>");
         }
@@ -145,6 +154,11 @@ public class App {
     }
     private static void update(String sql, int id) throws SQLException {
         try (Connection c = DriverManager.getConnection(DB_URL); PreparedStatement s = c.prepareStatement(sql)) { s.setInt(1, id); s.executeUpdate(); }
+    }
+    private static void updateCategory(int id, String category) throws SQLException {
+        try (Connection c = DriverManager.getConnection(DB_URL); PreparedStatement s = c.prepareStatement("UPDATE todos SET category = ? WHERE id = ?")) {
+            s.setString(1, category); s.setInt(2, id); s.executeUpdate();
+        }
     }
     private static void deleteCompletedTodos() throws SQLException {
         try (Connection c = DriverManager.getConnection(DB_URL); PreparedStatement s = c.prepareStatement("DELETE FROM todos WHERE done = 1")) { s.executeUpdate(); }
@@ -175,9 +189,11 @@ public class App {
     }
     private static String normalizeCategory(String v) { return CATEGORIES.contains(v) ? v : null; }
     private static String categoryOrOther(String v) { String category = normalizeCategory(v); return category == null ? "その他" : category; }
-    private static String categoryOptions() {
+    private static String categoryOptions() { return categoryOptions(null); }
+    private static String categoryOptions(String selectedCategory) {
         StringBuilder out = new StringBuilder();
-        for (String category : CATEGORIES) out.append("<option value='").append(escapeHtml(category)).append("'>").append(escapeHtml(category)).append("</option>");
+        for (String category : CATEGORIES) out.append("<option value='").append(escapeHtml(category)).append("'")
+            .append(category.equals(selectedCategory) ? " selected" : "").append(">").append(escapeHtml(category)).append("</option>");
         return out.toString();
     }
     private static String formatDueAt(String v) {
@@ -191,6 +207,7 @@ public class App {
         return "";
     }
     private static Integer queryId(HttpExchange e) { try { String v = queryValue(e, "id"); return v == null ? null : Integer.valueOf(v); } catch (NumberFormatException ignored) { return null; } }
+    private static Integer parseInteger(String v) { try { return Integer.valueOf(v); } catch (NumberFormatException ignored) { return null; } }
     private static String queryValue(HttpExchange e, String name) {
         String query = e.getRequestURI().getRawQuery();
         if (query != null) for (String part : query.split("&")) { String[] pair = part.split("=", 2); if (pair.length == 2 && decode(pair[0]).equals(name)) return decode(pair[1]); }

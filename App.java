@@ -53,6 +53,10 @@ public class App {
             if (id != null) update("DELETE FROM todos WHERE id = ?", id);
             redirect(exchange); return;
         }
+        if (path.equals("/delete-completed") && method.equals("POST")) {
+            deleteCompletedTodos();
+            redirect(exchange); return;
+        }
         if (path.equals("/") && method.equals("GET")) { showList(exchange); return; }
         send(exchange, 404, "text/plain; charset=UTF-8", "ページが見つかりません");
     }
@@ -79,14 +83,15 @@ public class App {
             .field{padding:12px 14px;border-right:1px solid var(--line)}label{display:block;font-size:11px;font-weight:700;letter-spacing:.12em;margin-bottom:6px}input,select,button{font:inherit;color:var(--ink)}
             input,select{width:100%;height:38px;border:0;border-bottom:1px solid #9aadb2;background:transparent;outline:none}input:focus,select:focus{border-color:var(--ink)}
             .add-button{border:0;background:var(--ink);color:white;padding:0 24px;font-weight:700;letter-spacing:.12em;cursor:pointer}.add-button:hover{background:#24576a}
-            .toolbar{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:12px 14px;border-bottom:1px solid var(--line);background:#f7f3ef}.filter,.sort{display:flex;align-items:center;gap:7px;margin:0}.filter span,.sort span{font-size:12px;font-weight:700}
+            .toolbar{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:12px 14px;border-bottom:1px solid var(--line);background:#f7f3ef}.filter,.sort,.bulk-delete{display:flex;align-items:center;gap:7px;margin:0}.filter span,.sort span{font-size:12px;font-weight:700}
             .filter button{border:1px solid var(--ink);background:transparent;padding:6px 13px;cursor:pointer}.filter button.active,.filter button:hover{background:var(--ink);color:#fff}.sort select{width:180px;height:32px}
+            .toolbar-actions{display:flex;align-items:center;gap:12px}.bulk-delete button{height:32px;border:1px solid var(--accent);background:transparent;color:var(--accent);padding:0 12px;cursor:pointer}.bulk-delete button:hover{background:var(--accent);color:#fff}.bulk-delete button:disabled{border-color:#aaa;color:#999;cursor:not-allowed;background:transparent}
             table{width:100%;border-collapse:collapse;table-layout:fixed}.status-col{width:74px}.due-col{width:210px}.category-col{width:130px}.action-col{width:130px}
             th{height:44px;padding:8px;background:var(--ink);color:white;border-right:1px solid #b4c4c9;font-size:12px;letter-spacing:.15em}th:last-child{border-right:0}
             td{height:64px;padding:10px 14px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:#ffffffc7;vertical-align:middle}td:last-child{border-right:0}.todo-row:last-child td{border-bottom:0}
             .check{display:inline-grid;place-items:center;width:25px;height:25px;border:2px solid var(--ink);color:transparent;text-decoration:none}.check:hover{background:#d7e1e2}.done .check{background:var(--ink);color:#fff}.title{font-weight:700;overflow-wrap:anywhere}.done .title{text-decoration:line-through;color:#7d898b}
             time{font-size:13px;color:#4f6268}.category{display:inline-block;border:1px solid #84989e;border-radius:20px;padding:4px 10px;font-size:12px;white-space:nowrap}.actions{display:flex;gap:10px;justify-content:center}.actions a{font-size:13px}.delete{color:var(--accent);text-decoration:none}.empty{padding:60px 20px;text-align:center;background:#ffffffc7;color:var(--muted)}
-            @media(max-width:760px){.page{margin-top:24px}.masthead{align-items:flex-start;flex-direction:column}.summary{text-align:left}.add-form{grid-template-columns:1fr 1fr}.field:first-child{grid-column:1/-1;border-bottom:1px solid var(--line)}.field:nth-child(3){border-right:0}.add-button{grid-column:1/-1;height:48px}.toolbar{align-items:stretch;flex-direction:column}.table-wrap{overflow-x:auto}table{min-width:720px}}
+            @media(max-width:760px){.page{margin-top:24px}.masthead{align-items:flex-start;flex-direction:column}.summary{text-align:left}.add-form{grid-template-columns:1fr 1fr}.field:first-child{grid-column:1/-1;border-bottom:1px solid var(--line)}.field:nth-child(3){border-right:0}.add-button{grid-column:1/-1;height:48px}.toolbar{align-items:stretch;flex-direction:column}.toolbar-actions{justify-content:space-between;flex-wrap:wrap}.table-wrap{overflow-x:auto}table{min-width:720px}}
             </style></head><body><main class='page'><header class='masthead'><h1>TODO LIST<span class='flower'>✿</span></h1>
             """);
         html.append("<div class='summary'><strong>").append(completed).append(" / ").append(todos.size())
@@ -97,9 +102,11 @@ public class App {
             .append("<div class='field'><label for='dueAt'>締切</label><input id='dueAt' type='datetime-local' name='dueAt'></div><button class='add-button'>追加 ＋</button></form>")
             .append("<div class='toolbar'><form class='filter' method='get'><span>表示</span><input type='hidden' name='sort' value='").append(sort).append("'>")
             .append(filterButton("all", "すべて", filter)).append(filterButton("done", "完了", filter)).append(filterButton("undone", "未完了", filter)).append("</form>")
-            .append("<form class='sort' method='get'><span>並び替え</span><input type='hidden' name='filter' value='").append(filter).append("'><select name='sort' onchange='this.form.submit()'>")
+            .append("<div class='toolbar-actions'><form class='sort' method='get'><span>並び替え</span><input type='hidden' name='filter' value='").append(filter).append("'><select name='sort' onchange='this.form.submit()'>")
             .append(sortOption("newest", "追加順（新しい順）", sort)).append(sortOption("oldest", "追加順（古い順）", sort)).append(sortOption("name-asc", "名前順（昇順）", sort))
-            .append(sortOption("name-desc", "名前順（降順）", sort)).append(sortOption("category", "カテゴリ順", sort)).append("</select><noscript><button>適用</button></noscript></form></div>");
+            .append(sortOption("name-desc", "名前順（降順）", sort)).append(sortOption("category", "カテゴリ順", sort)).append("</select><noscript><button>適用</button></noscript></form>")
+            .append("<form class='bulk-delete' method='post' action='/delete-completed' onsubmit=\"return confirm('本当に削除しますか？')\"><button type='submit'")
+            .append(completed == 0 ? " disabled" : "").append(">完了項目を一括削除</button></form></div></div>");
         if (displayed.isEmpty()) html.append("<div class='empty'>該当するタスクはありません</div>");
         else {
             html.append("<div class='table-wrap'><table><thead><tr><th class='status-col'>進捗</th><th class='due-col'>締切</th><th>内容</th><th class='category-col'>カテゴリ</th><th class='action-col'>操作</th></tr></thead><tbody>");
@@ -138,6 +145,9 @@ public class App {
     }
     private static void update(String sql, int id) throws SQLException {
         try (Connection c = DriverManager.getConnection(DB_URL); PreparedStatement s = c.prepareStatement(sql)) { s.setInt(1, id); s.executeUpdate(); }
+    }
+    private static void deleteCompletedTodos() throws SQLException {
+        try (Connection c = DriverManager.getConnection(DB_URL); PreparedStatement s = c.prepareStatement("DELETE FROM todos WHERE done = 1")) { s.executeUpdate(); }
     }
     private static List<Todo> selectTodos() throws SQLException {
         List<Todo> todos = new ArrayList<>();

@@ -105,7 +105,7 @@ public class App {
             th{height:44px;padding:8px;background:var(--ink);color:white;border-right:1px solid #b4c4c9;font-size:12px;letter-spacing:.15em}th:last-child{border-right:0}
             td{height:64px;padding:10px 14px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:#ffffffc7;vertical-align:middle}td:last-child{border-right:0}.todo-row:last-child td{border-bottom:0}
             .check{display:inline-grid;place-items:center;width:25px;height:25px;border:2px solid var(--ink);color:transparent;text-decoration:none}.check:hover{background:#d7e1e2}.done .check{background:var(--ink);color:#fff}.title{font-weight:700;overflow-wrap:anywhere}.done .title{text-decoration:line-through;color:#7d898b}
-            time{font-size:13px;color:#4f6268}.due-form,.category-form{margin:0;text-align:center}.due-field{position:relative}.due-input{height:34px;font-size:12px;text-align:center;cursor:pointer}.due-placeholder{position:absolute;inset:0 28px 1px 1px;display:grid;place-items:center;background:#fff;font-size:12px;color:#4f6268;pointer-events:none}.due-field:focus-within .due-placeholder{display:none}.category-select{height:32px;border:1px solid #84989e;border-radius:20px;padding:0 9px;font-size:12px;text-align:center;text-align-last:center;cursor:pointer;background:#fff}.actions{display:flex;gap:10px;justify-content:center}.actions a{font-size:13px}.delete{color:var(--accent);text-decoration:none}.empty{padding:60px 20px;text-align:center;background:#ffffffc7;color:var(--muted)}
+            time{font-size:13px;color:#4f6268}.due-form,.category-form{margin:0;text-align:center}.due-field{position:relative}.due-input{height:34px;font-size:12px;text-align:center;cursor:pointer}.due-input.no-due{color:transparent}.due-input.no-due:focus{color:var(--ink)}.due-input.no-due::-webkit-datetime-edit{color:transparent}.due-input.no-due:focus::-webkit-datetime-edit{color:var(--ink)}.due-placeholder{position:absolute;inset:0 28px 1px 1px;display:grid;place-items:center;font-size:12px;color:#4f6268;pointer-events:none}.due-field:focus-within .due-placeholder{display:none}.category-select{height:32px;border:1px solid #84989e;border-radius:20px;padding:0 9px;font-size:12px;text-align:center;text-align-last:center;cursor:pointer;background:#fff}.actions{display:flex;gap:10px;justify-content:center}.actions a{font-size:13px}.delete{color:var(--accent);text-decoration:none}.empty{padding:60px 20px;text-align:center;background:#ffffffc7;color:var(--muted)}
             @media(max-width:760px){.page{margin-top:24px}.masthead{align-items:flex-start;flex-direction:column}.summary{text-align:left}.add-form{grid-template-columns:1fr 1fr}.field:first-child{grid-column:1/-1;border-bottom:1px solid var(--line)}.field:nth-child(3){border-right:0}.add-button{grid-column:1/-1;height:48px}.toolbar{align-items:stretch;flex-direction:column}.toolbar-actions{justify-content:space-between;flex-wrap:wrap}.table-wrap{overflow-x:auto}table{min-width:720px}}
             </style></head><body><main class='page'><header class='masthead'><h1>TODO LIST<span class='flower'>✿</span></h1>
             """);
@@ -119,7 +119,8 @@ public class App {
             .append(filterButton("all", "すべて", filter)).append(filterButton("done", "完了", filter)).append(filterButton("undone", "未完了", filter)).append("</form>")
             .append("<div class='toolbar-actions'><form class='sort' method='get'><span>並び替え</span><input type='hidden' name='filter' value='").append(filter).append("'><select name='sort' onchange='this.form.submit()'>")
             .append(sortOption("newest", "追加順（新しい順）", sort)).append(sortOption("oldest", "追加順（古い順）", sort)).append(sortOption("name-asc", "名前順（昇順）", sort))
-            .append(sortOption("name-desc", "名前順（降順）", sort)).append(sortOption("category", "カテゴリ順", sort)).append("</select><noscript><button>適用</button></noscript></form>")
+            .append(sortOption("name-desc", "名前順（降順）", sort)).append(sortOption("due-asc", "締切日順（昇順）", sort))
+            .append(sortOption("due-desc", "締切日順（降順）", sort)).append(sortOption("category", "カテゴリ順", sort)).append("</select><noscript><button>適用</button></noscript></form>")
             .append("<form class='bulk-delete' method='post' action='/delete-completed' onsubmit=\"return confirm('本当に削除しますか？')\"><button type='submit'")
             .append(completed == 0 ? " disabled" : "").append(">完了項目を一括削除</button></form></div></div>");
         if (displayed.isEmpty()) html.append("<div class='empty'>該当するタスクはありません</div>");
@@ -130,7 +131,7 @@ public class App {
                 html.append("<a class='check' aria-label='").append(todo.done ? "未完了に戻す" : "完了にする")
                     .append("' href='/done?id=").append(todo.id).append("'>✓</a>");
                 html.append("</td><td><form class='due-form' method='post' action='/due-at'><input type='hidden' name='id' value='").append(todo.id)
-                    .append("'><div class='due-field'><input class='due-input' type='datetime-local' name='dueAt' aria-label='").append(escapeHtml(todo.title)).append("の締切' value='")
+                    .append("'><div class='due-field'><input class='due-input").append(todo.dueAt == null ? " no-due" : "").append("' type='datetime-local' name='dueAt' aria-label='").append(escapeHtml(todo.title)).append("の締切' value='")
                     .append(escapeHtml(todo.dueAt == null ? "" : todo.dueAt)).append("' onclick='if(this.showPicker)this.showPicker()' onchange='this.form.submit()'>")
                     .append(todo.dueAt == null ? "<span class='due-placeholder'>締切なし</span>" : "")
                     .append("</div><noscript><button type='submit'>変更</button></noscript></form></td>")
@@ -194,12 +195,18 @@ public class App {
             comparator = (a, b) -> collator.compare(a.title, b.title);
             if (sort.equals("name-desc")) comparator = comparator.reversed();
             comparator = comparator.thenComparingInt(t -> t.id);
+        } else if (sort.equals("due-asc") || sort.equals("due-desc")) {
+            Comparator<String> dueComparator = sort.equals("due-asc")
+                ? Comparator.naturalOrder()
+                : Comparator.reverseOrder();
+            comparator = Comparator.comparing((Todo t) -> t.dueAt, Comparator.nullsLast(dueComparator))
+                .thenComparingInt(t -> t.id);
         } else if (sort.equals("category")) comparator = Comparator.comparingInt((Todo t) -> CATEGORIES.indexOf(t.category)).thenComparingInt(t -> t.id);
         else comparator = Comparator.comparingInt((Todo t) -> t.id).reversed();
         todos.sort(comparator);
     }
     private static String normalizeFilter(String v) { return "done".equals(v) || "undone".equals(v) ? v : "all"; }
-    private static String normalizeSort(String v) { return "oldest".equals(v) || "name-asc".equals(v) || "name-desc".equals(v) || "category".equals(v) ? v : "newest"; }
+    private static String normalizeSort(String v) { return "oldest".equals(v) || "name-asc".equals(v) || "name-desc".equals(v) || "due-asc".equals(v) || "due-desc".equals(v) || "category".equals(v) ? v : "newest"; }
     private static String normalizeDueAt(String v) {
         if (v == null || v.isBlank()) return null;
         try { return LocalDateTime.parse(v).toString(); } catch (DateTimeParseException ignored) { return null; }

@@ -45,7 +45,7 @@ public class App {
         }
         if (path.equals("/done") && method.equals("GET")) {
             Integer id = queryId(exchange);
-            if (id != null) update("UPDATE todos SET done = 1 WHERE id = ?", id);
+            if (id != null) update("UPDATE todos SET done = CASE WHEN done = 1 THEN 0 ELSE 1 END WHERE id = ?", id);
             redirect(exchange); return;
         }
         if (path.equals("/delete") && method.equals("GET")) {
@@ -105,8 +105,8 @@ public class App {
             html.append("<div class='table-wrap'><table><thead><tr><th class='status-col'>進捗</th><th class='due-col'>締切</th><th>内容</th><th class='category-col'>カテゴリ</th><th class='action-col'>操作</th></tr></thead><tbody>");
             for (Todo todo : displayed) {
                 html.append("<tr class='todo-row").append(todo.done ? " done" : "").append("'><td>");
-                if (todo.done) html.append("<span class='check' aria-label='完了'>✓</span>");
-                else html.append("<a class='check' aria-label='完了にする' href='/done?id=").append(todo.id).append("'>✓</a>");
+                html.append("<a class='check' aria-label='").append(todo.done ? "未完了に戻す" : "完了にする")
+                    .append("' href='/done?id=").append(todo.id).append("'>✓</a>");
                 html.append("</td><td><time datetime='").append(escapeHtml(todo.dueAt == null ? "" : todo.dueAt)).append("'>").append(escapeHtml(formatDueAt(todo.dueAt)))
                     .append("</time></td><td class='title'>").append(escapeHtml(todo.title)).append("</td><td><span class='category'>").append(escapeHtml(todo.category))
                     .append("</span></td><td><div class='actions'>");

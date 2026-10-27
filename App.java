@@ -66,20 +66,31 @@ public class App {
 
         if (path.equals("/") && method.equals("GET")) {
             List<Todo> todos = selectTodos(); // ★ SELECTで最新の一覧を読み出す
+            String filter = normalizeFilter(queryValue(exchange, "filter"));
+            List<Todo> displayedTodos = filterTodos(todos, filter);
+            long completedCount = todos.stream().filter(todo -> todo.done).count();
             StringBuilder html = new StringBuilder()
                     .append("<!doctype html><html lang='ja'><head><meta charset='UTF-8'>")
                     .append("<title>わたしのTodo</title>")
                     .append("<style>body{max-width:640px;margin:40px auto;padding:0 16px;font-size:16px}")
-                    .append("h1{font-size:24px}input,button{font-size:16px;padding:6px}li{margin:8px 0}</style>")
+                    .append("h1{font-size:24px}input,button{font-size:16px;padding:6px}li{margin:8px 0}")
+                    .append(".filters{display:flex;gap:8px;margin:16px 0}.active{font-weight:bold;background:#333;color:#fff}</style>")
                     .append("</head><body><h1>わたしのTodo</h1>")
                     .append("<form method='post' action='/add'><input name='todo' required>")
-                    .append("<button>追加</button></form>");
+                    .append("<button>追加</button></form>")
+                    .append("<p>").append(todos.size()).append("件中")
+                    .append(completedCount).append("件完了</p>")
+                    .append("<form class='filters' method='get' action='/'>")
+                    .append(filterButton("all", "全て", filter))
+                    .append(filterButton("done", "完了", filter))
+                    .append(filterButton("undone", "未完了", filter))
+                    .append("</form>");
 
-            if (todos.isEmpty()) {
-                html.append("<p>やることは、いまゼロです。</p>");
+            if (displayedTodos.isEmpty()) {
+                html.append("<p>該当する項目はありません。</p>");
             } else {
                 html.append("<ul>");
-                for (Todo todo : todos) {
+                for (Todo todo : displayedTodos) {
                     html.append("<li>")
                             .append(escapeHtml(todo.title))
                             .append(todo.done ? " ✓" : "")
@@ -150,6 +161,31 @@ public class App {
         return todos; // ★
     }
 
+    private static List<Todo> filterTodos(List<Todo> todos, String filter) {
+        List<Todo> filteredTodos = new ArrayList<>();
+        for (Todo todo : todos) {
+            if (filter.equals("done") && todo.done
+                    || filter.equals("undone") && !todo.done
+                    || filter.equals("all")) {
+                filteredTodos.add(todo);
+            }
+        }
+        return filteredTodos;
+    }
+
+    private static String normalizeFilter(String filter) {
+        if (filter == null || !filter.equals("done") && !filter.equals("undone")) {
+            return "all";
+        }
+        return filter;
+    }
+
+    private static String filterButton(String value, String label, String currentFilter) {
+        String activeClass = value.equals(currentFilter) ? " class='active'" : "";
+        return "<button type='submit' name='filter' value='" + value + "'"
+                + activeClass + ">" + label + "</button>";
+    }
+
     private static String formValue(String body, String name) {
         for (String part : body.split("&")) {
             String[] pair = part.split("=", 2);
@@ -161,21 +197,30 @@ public class App {
     }
 
     private static Integer queryId(HttpExchange exchange) {
+        String value = queryValue(exchange, "id");
+        if (value == null) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(value);
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    private static String queryValue(HttpExchange exchange, String name) {
         String query = exchange.getRequestURI().getRawQuery();
         if (query == null) {
-            return null;
+            return name.equals("filter") ? "all" : null;
         }
         for (String part : query.split("&")) {
             String[] pair = part.split("=", 2);
-            if (pair.length == 2 && pair[0].equals("id")) {
-                try {
-                    return Integer.valueOf(pair[1]);
-                } catch (NumberFormatException ignored) {
-                    return null;
-                }
+            if (pair.length == 2
+                    && URLDecoder.decode(pair[0], StandardCharsets.UTF_8).equals(name)) {
+                return URLDecoder.decode(pair[1], StandardCharsets.UTF_8);
             }
         }
-        return null;
+        return name.equals("filter") ? "all" : null;
     }
 
     private static String escapeHtml(String value) {

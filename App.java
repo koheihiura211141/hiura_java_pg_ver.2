@@ -2,6 +2,8 @@ import com.sun.net.httpserver.HttpServer; // 小さなWebサーバー機能を�
 import java.net.InetSocketAddress; // 待ち受けるポート番号を指定する機能を読み込みます
 import java.net.URLDecoder; // 追加：送られてきた日本語を元に戻す機能を読み込みます
 import java.nio.charset.StandardCharsets; // 追加：UTF-8という文字コードを指定する機能を読み込みます
+import java.nio.file.Files; // 追加：todos.csvを読み書きする機能を読み込みます
+import java.nio.file.Path; // 追加：todos.csvの場所を表す機能を読み込みます
 import java.util.ArrayList; // 追加：Todoを入れる一覧を作る機能を読み込みます
 import java.util.List; // 追加：Todoの一覧を扱う機能を読み込みます
 
@@ -11,10 +13,7 @@ public class App { // Appという名前のプログラムを定義します
 
     public static void main(String[] args) throws Exception { // プログラムの開始地点を定義します
         HttpServer server = HttpServer.create(new InetSocketAddress(8081), 0); // 8080番ポートでWebサーバーを用意します
-        todos.add(new Todo(nextId++, "牛乳を買う")); // ★変更
-        Todo egg = new Todo(nextId++, "卵を買う"); // ★変更
-        egg.setDone(true); // ★変更
-        todos.add(egg); // ★変更
+        load(); // 変更：起動時にtodos.csvの全件を読み込みます
         server.createContext("/", exchange -> { // 「/」へのアクセスを受け取ったときの処理です
             String path = exchange.getRequestURI().getPath(); // アクセスされたパスを取り出します
             String method = exchange.getRequestMethod(); // 追加：GETかPOSTかを取り出します
@@ -27,6 +26,7 @@ public class App { // Appという名前のプログラムを定義します
                 if (!title.isEmpty()) { // ★変更
                     todos.add(new Todo(nextId, title)); // ★変更
                     nextId++; // ★変更
+                    save(); // 追加：Todoの追加直後に全件をtodos.csvへ保存します
                 } // 追加：空の入力を除く処理を終えます
                 exchange.getResponseHeaders().set("Location", "/"); // 追加：戻る場所を「/」に指定します
                 exchange.sendResponseHeaders(303, -1); // 追加：「/」へ移動する応答を返します
@@ -55,6 +55,31 @@ public class App { // Appという名前のプログラムを定義します
         server.start(); // Webサーバーの待ち受けを開始します
         System.out.println("サーバー起動: http://localhost:8081 （止めるときは Ctrl+C）"); // 起動したことをターミナルへ表示します
     } // mainの定義を閉じます
+
+    static void save() throws java.io.IOException { // 追加：現在のTodo全件をtodos.csvへ保存します
+        List<String> lines = new ArrayList<>(); // 追加：CSVへ書き出す行をためる一覧を作ります
+        for (Todo todo : todos) { // 追加：現在のTodoを1件ずつCSVの行へ変換します
+            lines.add(todo.getId() + "," + (todo.isDone() ? "1" : "0") + "," + todo.getTitle()); // 追加：id,done,titleの順で1行を作ります
+        } // 追加：全件をCSVの行へ変換する処理を終えます
+        Files.write(Path.of("todos.csv"), lines, StandardCharsets.UTF_8); // 追加：全行をUTF-8でtodos.csvへ書き出します
+    } // 追加：保存処理を終えます
+
+    static void load() throws java.io.IOException { // 追加：todos.csvからTodo全件を読み込みます
+        Path file = Path.of("todos.csv"); // 追加：読み込むtodos.csvの場所を用意します
+        if (!Files.exists(file)) { // 追加：todos.csvがまだ無いかを確認します
+            return; // 追加：ファイルが無い場合は空の一覧のまま起動します
+        } // 追加：ファイル有無の確認を終えます
+        int maxId = 0; // 追加：読み込んだ中で最大のidを記録します
+        for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) { // 追加：UTF-8のCSVを1行ずつ読み込みます
+            String[] values = line.split(",", 3); // 追加：1行をid、done、titleの3項目に分けます
+            int id = Integer.parseInt(values[0]); // 追加：1項目目からidを読み取ります
+            Todo todo = new Todo(id, values[2]); // 追加：読み取ったidとtitleでTodoを復元します
+            todo.setDone(values[1].equals("1")); // 追加：doneが1なら完了状態へ戻します
+            todos.add(todo); // 追加：復元したTodoを一覧へ加えます
+            maxId = Math.max(maxId, id); // 追加：次の番号を決めるため最大のidを更新します
+        } // 追加：CSV全行の読み込みを終えます
+        nextId = maxId + 1; // 追加：次のidを最大idの次の番号にします
+    } // 追加：読込処理を終えます
 } // Appの定義を閉じます
 
 class Todo { // ★変更

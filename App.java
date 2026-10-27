@@ -72,16 +72,26 @@ public class App {
             deleteCompletedTodos();
             redirect(exchange); return;
         }
-        if (path.equals("/") && method.equals("GET")) { showList(exchange); return; }
+        if (path.equals("/") && method.equals("GET")) {
+            if (exchange.getRequestURI().getRawQuery() == null) {
+                redirect(exchange, "/?filter=all&categoryFilter=all&sort=newest"); return;
+            }
+            showList(exchange); return;
+        }
         send(exchange, 404, "text/plain; charset=UTF-8", "ページが見つかりません");
     }
 
     private static void showList(HttpExchange exchange) throws IOException, SQLException {
         List<Todo> todos = selectTodos();
         String filter = normalizeFilter(queryValue(exchange, "filter"));
+        String categoryFilter = normalizeCategoryFilter(queryValue(exchange, "categoryFilter"));
         String sort = normalizeSort(queryValue(exchange, "sort"));
         List<Todo> displayed = new ArrayList<>();
-        for (Todo todo : todos) if (filter.equals("all") || filter.equals("done") == todo.done) displayed.add(todo);
+        for (Todo todo : todos) {
+            boolean matchesStatus = filter.equals("all") || filter.equals("done") == todo.done;
+            boolean matchesCategory = categoryFilter.equals("all") || categoryFilter.equals(todo.category);
+            if (matchesStatus && matchesCategory) displayed.add(todo);
+        }
         sortTodos(displayed, sort);
         long completed = todos.stream().filter(todo -> todo.done).count();
         int progress = todos.isEmpty() ? 0 : (int) Math.round(completed * 100.0 / todos.size());
@@ -98,8 +108,8 @@ public class App {
             .field{padding:12px 14px;border-right:1px solid var(--line)}label{display:block;font-size:11px;font-weight:700;letter-spacing:.12em;margin-bottom:6px}input,select,button{font:inherit;color:var(--ink)}
             input,select{width:100%;height:38px;border:0;border-bottom:1px solid #9aadb2;background:transparent;outline:none}input:focus,select:focus{border-color:var(--ink)}
             .add-button{border:0;background:var(--ink);color:white;padding:0 24px;font-weight:700;letter-spacing:.12em;cursor:pointer}.add-button:hover{background:#24576a}
-            .toolbar{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:12px 14px;border-bottom:1px solid var(--line);background:#f7f3ef}.filter,.sort,.bulk-delete{display:flex;align-items:center;gap:7px;margin:0}.filter span,.sort span{font-size:12px;font-weight:700}
-            .filter button{border:1px solid var(--ink);background:transparent;padding:6px 13px;cursor:pointer}.filter button.active,.filter button:hover{background:var(--ink);color:#fff}.sort select{width:180px;height:32px}
+            .toolbar{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:12px 14px;border-bottom:1px solid var(--line);background:#f7f3ef;flex-wrap:wrap}.filter,.category-filter,.sort,.bulk-delete{display:flex;align-items:center;gap:7px;margin:0}.filter span,.category-filter span,.sort span{font-size:12px;font-weight:700}
+            .filter button,.category-filter button{border:1px solid var(--ink);background:transparent;padding:6px 13px;cursor:pointer}.filter button.active,.filter button:hover,.category-filter button:hover{background:var(--ink);color:#fff}.category-filter select{width:120px;height:32px}.sort select{width:180px;height:32px}
             .toolbar-actions{display:flex;align-items:center;gap:12px}.bulk-delete button{height:32px;border:1px solid var(--accent);background:transparent;color:var(--accent);padding:0 12px;cursor:pointer}.bulk-delete button:hover{background:var(--accent);color:#fff}.bulk-delete button:disabled{border-color:#aaa;color:#999;cursor:not-allowed;background:transparent}
             table{width:100%;border-collapse:collapse;table-layout:fixed}.status-col{width:74px}.due-col{width:210px}.category-col{width:130px}.action-col{width:130px}
             th{height:44px;padding:8px;background:var(--ink);color:white;border-right:1px solid #b4c4c9;font-size:12px;letter-spacing:.15em}th:last-child{border-right:0}
@@ -115,9 +125,11 @@ public class App {
             .append("<div class='field'><label for='todo'>内容</label><input id='todo' name='todo' placeholder='新しいタスクを入力' maxlength='200' required></div>")
             .append("<div class='field'><label for='category'>カテゴリ</label><select id='category' name='category' required>").append(categoryOptions()).append("</select></div>")
             .append("<div class='field'><label for='dueAt'>締切</label><input id='dueAt' type='datetime-local' name='dueAt'></div><button class='add-button'>追加 ＋</button></form>")
-            .append("<div class='toolbar'><form class='filter' method='get'><span>表示</span><input type='hidden' name='sort' value='").append(sort).append("'>")
+            .append("<div class='toolbar'><form class='filter' method='get'><span>表示</span><input type='hidden' name='sort' value='").append(sort).append("'><input type='hidden' name='categoryFilter' value='").append(escapeHtml(categoryFilter)).append("'>")
             .append(filterButton("all", "すべて", filter)).append(filterButton("done", "完了", filter)).append(filterButton("undone", "未完了", filter)).append("</form>")
-            .append("<div class='toolbar-actions'><form class='sort' method='get'><span>並び替え</span><input type='hidden' name='filter' value='").append(filter).append("'><select name='sort' onchange='this.form.submit()'>")
+            .append("<form class='category-filter' method='get'><span>カテゴリ</span><input type='hidden' name='filter' value='").append(filter).append("'><input type='hidden' name='sort' value='").append(sort).append("'><select name='categoryFilter'>")
+            .append(categoryFilterOptions(categoryFilter)).append("</select><button type='submit'>表示</button></form>")
+            .append("<div class='toolbar-actions'><form class='sort' method='get'><span>並び替え</span><input type='hidden' name='filter' value='").append(filter).append("'><input type='hidden' name='categoryFilter' value='").append(escapeHtml(categoryFilter)).append("'><select name='sort' onchange='this.form.submit()'>")
             .append(sortOption("newest", "追加順（新しい順）", sort)).append(sortOption("oldest", "追加順（古い順）", sort)).append(sortOption("name-asc", "名前順（昇順）", sort))
             .append(sortOption("name-desc", "名前順（降順）", sort)).append(sortOption("due-asc", "締切日順（昇順）", sort))
             .append(sortOption("due-desc", "締切日順（降順）", sort)).append(sortOption("category", "カテゴリ順", sort)).append("</select><noscript><button>適用</button></noscript></form>")
@@ -132,7 +144,7 @@ public class App {
                     .append("' href='/done?id=").append(todo.id).append("'>✓</a>");
                 html.append("</td><td><form class='due-form' method='post' action='/due-at'><input type='hidden' name='id' value='").append(todo.id)
                     .append("'><div class='due-field'><input class='due-input").append(todo.dueAt == null ? " no-due" : "").append("' type='datetime-local' name='dueAt' aria-label='").append(escapeHtml(todo.title)).append("の締切' value='")
-                    .append(escapeHtml(todo.dueAt == null ? "" : todo.dueAt)).append("' onclick='if(this.showPicker)this.showPicker()' onchange='this.form.submit()'>")
+                    .append(escapeHtml(todo.dueAt == null ? "" : todo.dueAt)).append("' onchange='this.form.submit()'>")
                     .append(todo.dueAt == null ? "<span class='due-placeholder'>締切なし</span>" : "")
                     .append("</div><noscript><button type='submit'>変更</button></noscript></form></td>")
                     .append("<td class='title'>").append(escapeHtml(todo.title)).append("</td><td><form class='category-form' method='post' action='/category'>")
@@ -206,6 +218,7 @@ public class App {
         todos.sort(comparator);
     }
     private static String normalizeFilter(String v) { return "done".equals(v) || "undone".equals(v) ? v : "all"; }
+    private static String normalizeCategoryFilter(String v) { return CATEGORIES.contains(v) ? v : "all"; }
     private static String normalizeSort(String v) { return "oldest".equals(v) || "name-asc".equals(v) || "name-desc".equals(v) || "due-asc".equals(v) || "due-desc".equals(v) || "category".equals(v) ? v : "newest"; }
     private static String normalizeDueAt(String v) {
         if (v == null || v.isBlank()) return null;
@@ -216,6 +229,12 @@ public class App {
     private static String categoryOptions() { return categoryOptions(null); }
     private static String categoryOptions(String selectedCategory) {
         StringBuilder out = new StringBuilder();
+        for (String category : CATEGORIES) out.append("<option value='").append(escapeHtml(category)).append("'")
+            .append(category.equals(selectedCategory) ? " selected" : "").append(">").append(escapeHtml(category)).append("</option>");
+        return out.toString();
+    }
+    private static String categoryFilterOptions(String selectedCategory) {
+        StringBuilder out = new StringBuilder("<option value='all'>すべて</option>");
         for (String category : CATEGORIES) out.append("<option value='").append(escapeHtml(category)).append("'")
             .append(category.equals(selectedCategory) ? " selected" : "").append(">").append(escapeHtml(category)).append("</option>");
         return out.toString();
@@ -239,7 +258,8 @@ public class App {
     }
     private static String decode(String v) { return URLDecoder.decode(v, StandardCharsets.UTF_8); }
     private static String escapeHtml(String v) { return v.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&#39;"); }
-    private static void redirect(HttpExchange e) throws IOException { e.getResponseHeaders().set("Location", "/"); e.sendResponseHeaders(303, -1); e.close(); }
+    private static void redirect(HttpExchange e) throws IOException { redirect(e, "/"); }
+    private static void redirect(HttpExchange e, String location) throws IOException { e.getResponseHeaders().set("Location", location); e.sendResponseHeaders(303, -1); e.close(); }
     private static void send(HttpExchange e, int status, String type, String message) throws IOException {
         byte[] body = message.getBytes(StandardCharsets.UTF_8); e.getResponseHeaders().set("Content-Type", type); e.sendResponseHeaders(status, body.length); e.getResponseBody().write(body); e.getResponseBody().close();
     }

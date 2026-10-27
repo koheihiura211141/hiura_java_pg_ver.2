@@ -10,8 +10,11 @@ import java.sql.PreparedStatement; // ★ SQLを安全に実行するため追�
 import java.sql.ResultSet; // ★ SELECT結果の読み出し用
 import java.sql.SQLException; // ★ DBエラー処理用
 import java.sql.Statement; // ★ テーブル作成用
+import java.text.Collator;
 import java.util.ArrayList; // ★ SELECT結果を一覧にするため使用
+import java.util.Comparator;
 import java.util.List; // ★ SELECT結果を一覧にするため使用
+import java.util.Locale;
 
 public class App {
     private static final String DB_URL = "jdbc:sqlite:todos.db"; // ★ CSVではなくSQLiteを指定
@@ -67,23 +70,36 @@ public class App {
         if (path.equals("/") && method.equals("GET")) {
             List<Todo> todos = selectTodos(); // ★ SELECTで最新の一覧を読み出す
             String filter = normalizeFilter(queryValue(exchange, "filter"));
+            String sort = normalizeSort(queryValue(exchange, "sort"));
             List<Todo> displayedTodos = filterTodos(todos, filter);
+            sortTodos(displayedTodos, sort);
             long completedCount = todos.stream().filter(todo -> todo.done).count();
             StringBuilder html = new StringBuilder()
                     .append("<!doctype html><html lang='ja'><head><meta charset='UTF-8'>")
                     .append("<title>わたしのTodo</title>")
                     .append("<style>body{max-width:640px;margin:40px auto;padding:0 16px;font-size:16px}")
-                    .append("h1{font-size:24px}input,button{font-size:16px;padding:6px}li{margin:8px 0}")
-                    .append(".filters{display:flex;gap:8px;margin:16px 0}.active{font-weight:bold;background:#333;color:#fff}</style>")
+                    .append("h1{font-size:24px}input,button,select{font-size:16px;padding:6px}li{margin:8px 0}")
+                    .append(".controls{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}")
+                    .append(".controls span{align-self:center}.active{font-weight:bold;background:#333;color:#fff}</style>")
                     .append("</head><body><h1>わたしのTodo</h1>")
                     .append("<form method='post' action='/add'><input name='todo' required>")
                     .append("<button>追加</button></form>")
                     .append("<p>").append(todos.size()).append("件中")
                     .append(completedCount).append("件完了</p>")
-                    .append("<form class='filters' method='get' action='/'>")
+                    .append("<form class='controls' method='get' action='/'>")
+                    .append("<span>表示:</span><input type='hidden' name='sort' value='").append(sort).append("'>")
                     .append(filterButton("all", "全て", filter))
                     .append(filterButton("done", "完了", filter))
                     .append(filterButton("undone", "未完了", filter))
+                    .append("</form>")
+                    .append("<form class='controls' method='get' action='/'>")
+                    .append("<span>並び替え:</span><input type='hidden' name='filter' value='").append(filter).append("'>")
+                    .append("<select name='sort' onchange='this.form.submit()'>")
+                    .append(sortOption("newest", "追加順（新しい順）", sort))
+                    .append(sortOption("oldest", "追加順（古い順）", sort))
+                    .append(sortOption("name-asc", "名前順（昇順）", sort))
+                    .append(sortOption("name-desc", "名前順（降順）", sort))
+                    .append("</select><noscript><button type='submit'>切り替え</button></noscript>")
                     .append("</form>");
 
             if (displayedTodos.isEmpty()) {
@@ -180,10 +196,40 @@ public class App {
         return filter;
     }
 
+    private static void sortTodos(List<Todo> todos, String sort) {
+        Comparator<Todo> comparator;
+        if (sort.equals("oldest")) {
+            comparator = Comparator.comparingInt(todo -> todo.id);
+        } else if (sort.equals("name-asc") || sort.equals("name-desc")) {
+            Collator collator = Collator.getInstance(Locale.JAPANESE);
+            comparator = (left, right) -> collator.compare(left.title, right.title);
+            if (sort.equals("name-desc")) {
+                comparator = comparator.reversed();
+            }
+            comparator = comparator.thenComparingInt(todo -> todo.id);
+        } else {
+            comparator = Comparator.comparingInt((Todo todo) -> todo.id).reversed();
+        }
+        todos.sort(comparator);
+    }
+
+    private static String normalizeSort(String sort) {
+        if (sort == null || !sort.equals("oldest") && !sort.equals("name-asc")
+                && !sort.equals("name-desc")) {
+            return "newest";
+        }
+        return sort;
+    }
+
     private static String filterButton(String value, String label, String currentFilter) {
         String activeClass = value.equals(currentFilter) ? " class='active'" : "";
         return "<button type='submit' name='filter' value='" + value + "'"
                 + activeClass + ">" + label + "</button>";
+    }
+
+    private static String sortOption(String value, String label, String currentSort) {
+        String selected = value.equals(currentSort) ? " selected" : "";
+        return "<option value='" + value + "'" + selected + ">" + label + "</option>";
     }
 
     private static String formValue(String body, String name) {

@@ -55,6 +55,14 @@ public class App {
             if (id != null && category != null) updateCategory(id, category);
             redirect(exchange); return;
         }
+        if (path.equals("/due-at") && method.equals("POST")) {
+            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            Integer id = parseInteger(formValue(body, "id"));
+            String dueInput = formValue(body, "dueAt");
+            String dueAt = normalizeDueAt(dueInput);
+            if (id != null && (dueInput.isBlank() || dueAt != null)) updateDueAt(id, dueAt);
+            redirect(exchange); return;
+        }
         if (path.equals("/delete") && method.equals("GET")) {
             Integer id = queryId(exchange);
             if (id != null) update("DELETE FROM todos WHERE id = ?", id);
@@ -97,7 +105,7 @@ public class App {
             th{height:44px;padding:8px;background:var(--ink);color:white;border-right:1px solid #b4c4c9;font-size:12px;letter-spacing:.15em}th:last-child{border-right:0}
             td{height:64px;padding:10px 14px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:#ffffffc7;vertical-align:middle}td:last-child{border-right:0}.todo-row:last-child td{border-bottom:0}
             .check{display:inline-grid;place-items:center;width:25px;height:25px;border:2px solid var(--ink);color:transparent;text-decoration:none}.check:hover{background:#d7e1e2}.done .check{background:var(--ink);color:#fff}.title{font-weight:700;overflow-wrap:anywhere}.done .title{text-decoration:line-through;color:#7d898b}
-            time{font-size:13px;color:#4f6268}.category-form{margin:0;text-align:center}.category-select{height:32px;border:1px solid #84989e;border-radius:20px;padding:0 9px;font-size:12px;text-align:center;text-align-last:center;cursor:pointer;background:#fff}.actions{display:flex;gap:10px;justify-content:center}.actions a{font-size:13px}.delete{color:var(--accent);text-decoration:none}.empty{padding:60px 20px;text-align:center;background:#ffffffc7;color:var(--muted)}
+            time{font-size:13px;color:#4f6268}.due-form,.category-form{margin:0;text-align:center}.due-field{position:relative}.due-input{height:34px;font-size:12px;text-align:center;cursor:pointer}.due-placeholder{position:absolute;inset:0 28px 1px 1px;display:grid;place-items:center;background:#fff;font-size:12px;color:#4f6268;pointer-events:none}.due-field:focus-within .due-placeholder{display:none}.category-select{height:32px;border:1px solid #84989e;border-radius:20px;padding:0 9px;font-size:12px;text-align:center;text-align-last:center;cursor:pointer;background:#fff}.actions{display:flex;gap:10px;justify-content:center}.actions a{font-size:13px}.delete{color:var(--accent);text-decoration:none}.empty{padding:60px 20px;text-align:center;background:#ffffffc7;color:var(--muted)}
             @media(max-width:760px){.page{margin-top:24px}.masthead{align-items:flex-start;flex-direction:column}.summary{text-align:left}.add-form{grid-template-columns:1fr 1fr}.field:first-child{grid-column:1/-1;border-bottom:1px solid var(--line)}.field:nth-child(3){border-right:0}.add-button{grid-column:1/-1;height:48px}.toolbar{align-items:stretch;flex-direction:column}.toolbar-actions{justify-content:space-between;flex-wrap:wrap}.table-wrap{overflow-x:auto}table{min-width:720px}}
             </style></head><body><main class='page'><header class='masthead'><h1>TODO LIST<span class='flower'>✿</span></h1>
             """);
@@ -121,8 +129,12 @@ public class App {
                 html.append("<tr class='todo-row").append(todo.done ? " done" : "").append("'><td>");
                 html.append("<a class='check' aria-label='").append(todo.done ? "未完了に戻す" : "完了にする")
                     .append("' href='/done?id=").append(todo.id).append("'>✓</a>");
-                html.append("</td><td><time datetime='").append(escapeHtml(todo.dueAt == null ? "" : todo.dueAt)).append("'>").append(escapeHtml(formatDueAt(todo.dueAt)))
-                    .append("</time></td><td class='title'>").append(escapeHtml(todo.title)).append("</td><td><form class='category-form' method='post' action='/category'>")
+                html.append("</td><td><form class='due-form' method='post' action='/due-at'><input type='hidden' name='id' value='").append(todo.id)
+                    .append("'><div class='due-field'><input class='due-input' type='datetime-local' name='dueAt' aria-label='").append(escapeHtml(todo.title)).append("の締切' value='")
+                    .append(escapeHtml(todo.dueAt == null ? "" : todo.dueAt)).append("' onclick='if(this.showPicker)this.showPicker()' onchange='this.form.submit()'>")
+                    .append(todo.dueAt == null ? "<span class='due-placeholder'>締切なし</span>" : "")
+                    .append("</div><noscript><button type='submit'>変更</button></noscript></form></td>")
+                    .append("<td class='title'>").append(escapeHtml(todo.title)).append("</td><td><form class='category-form' method='post' action='/category'>")
                     .append("<input type='hidden' name='id' value='").append(todo.id).append("'><select class='category-select' name='category' aria-label='")
                     .append(escapeHtml(todo.title)).append("のカテゴリ' onchange='this.form.submit()'>").append(categoryOptions(todo.category))
                     .append("</select><noscript><button type='submit'>変更</button></noscript></form></td><td><div class='actions'>");
@@ -158,6 +170,11 @@ public class App {
     private static void updateCategory(int id, String category) throws SQLException {
         try (Connection c = DriverManager.getConnection(DB_URL); PreparedStatement s = c.prepareStatement("UPDATE todos SET category = ? WHERE id = ?")) {
             s.setString(1, category); s.setInt(2, id); s.executeUpdate();
+        }
+    }
+    private static void updateDueAt(int id, String dueAt) throws SQLException {
+        try (Connection c = DriverManager.getConnection(DB_URL); PreparedStatement s = c.prepareStatement("UPDATE todos SET due_at = ? WHERE id = ?")) {
+            s.setString(1, dueAt); s.setInt(2, id); s.executeUpdate();
         }
     }
     private static void deleteCompletedTodos() throws SQLException {

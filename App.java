@@ -13,6 +13,8 @@ import java.util.*;
 
 public class App {
     private static final String DB_URL = "jdbc:sqlite:todos.db";
+    private static final List<String> CATEGORIES = List.of(
+            "買い物", "家事", "手続き", "お金", "勉強", "趣味", "仕事", "その他");
     private static final DateTimeFormatter DUE_FORMAT = DateTimeFormatter.ofPattern("yyyy年M月d日 HH:mm");
 
     public static void main(String[] args) throws Exception {
@@ -36,8 +38,11 @@ public class App {
         if (path.equals("/add") && method.equals("POST")) {
             String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
             String title = formValue(body, "todo");
-            String dueAt = normalizeDueAt(formValue(body, "dueAt"));
-            if (!title.isBlank() && dueAt != null) insertTodo(title, dueAt);
+            String dueAtValue = formValue(body, "dueAt");
+            String dueAt = normalizeDueAt(dueAtValue);
+            String category = normalizeCategory(formValue(body, "category"));
+            boolean validDueAt = dueAtValue.isBlank() || dueAt != null;
+            if (!title.isBlank() && validDueAt && category != null) insertTodo(title, dueAt, category);
             redirect(exchange);
             return;
         }
@@ -78,7 +83,9 @@ public class App {
                 .append(".active{font-weight:bold;background:#333;color:#fff}time{margin-left:8px;color:#555}</style></head><body>")
                 .append("<h1>わたしのTodo</h1><form class='add-form' method='post' action='/add'>")
                 .append("<input name='todo' placeholder='Todo' required>")
-                .append("<label>締切日時 <input type='datetime-local' name='dueAt' required></label>")
+                .append("<label>カテゴリ:<select name='category' required>")
+                .append(categoryOptions()).append("</select></label>")
+                .append("<label>締切日時 <input type='datetime-local' name='dueAt'></label>")
                 .append("<button>追加</button></form><p>").append(todos.size()).append("件中 ")
                 .append(completed).append("件完了</p><form class='controls' method='get' action='/'>")
                 .append("<span>表示:</span><input type='hidden' name='sort' value='").append(sort).append("'>")
@@ -91,13 +98,15 @@ public class App {
                 .append(sortOption("oldest", "追加順（古い順）", sort))
                 .append(sortOption("name-asc", "名前順（昇順）", sort))
                 .append(sortOption("name-desc", "名前順（降順）", sort))
+                .append(sortOption("category", "タグ別", sort))
                 .append("</select><noscript><button>並び替え</button></noscript></form>");
         if (displayed.isEmpty()) {
             html.append("<p>該当する項目はありません。</p>");
         } else {
             html.append("<ul>");
             for (Todo todo : displayed) {
-                html.append("<li>").append(escapeHtml(todo.title))
+                html.append("<li><span class='category'>[").append(escapeHtml(todo.category)).append("]</span>")
+                        .append(escapeHtml(todo.title))
                         .append(" <time datetime='").append(escapeHtml(todo.dueAt == null ? "" : todo.dueAt))
                         .append("'>締切: ").append(escapeHtml(formatDueAt(todo.dueAt))).append("</time>")
                         .append(todo.done ? " ✓" : "").append(" <a href='/done?id=").append(todo.id)
@@ -113,6 +122,7 @@ public class App {
         try (Connection connection = DriverManager.getConnection(DB_URL); Statement statement = connection.createStatement()) {
             statement.execute("CREATE TABLE IF NOT EXISTS todos (id INTEGER PRIMARY KEY, title TEXT, done INTEGER, due_at TEXT)");
             if (!hasColumn(connection, "due_at")) statement.execute("ALTER TABLE todos ADD COLUMN due_at TEXT");
+            if (!hasColumn(connection, "category")) statement.execute("ALTER TABLE todos ADD COLUMN category TEXT DEFAULT 'その他'");
         }
     }
 
@@ -123,11 +133,12 @@ public class App {
         return false;
     }
 
-    private static void insertTodo(String title, String dueAt) throws SQLException {
+    private static void insertTodo(String title, String dueAt, String category) throws SQLException {
         try (Connection connection = DriverManager.getConnection(DB_URL);
-             PreparedStatement statement = connection.prepareStatement("INSERT INTO todos (title, done, due_at) VALUES (?, 0, ?)")) {
+             PreparedStatement statement = connection.prepareStatement("INSERT INTO todos (title, done, due_at, category) VALUES (?, 0, ?, ?)")) {
             statement.setString(1, title);
             statement.setString(2, dueAt);
+            statement.setString(3, category);
             statement.executeUpdate();
         }
     }
@@ -142,9 +153,10 @@ public class App {
     private static List<Todo> selectTodos() throws SQLException {
         List<Todo> todos = new ArrayList<>();
         try (Connection connection = DriverManager.getConnection(DB_URL);
-             PreparedStatement statement = connection.prepareStatement("SELECT id, title, done, due_at FROM todos ORDER BY id");
+             PreparedStatement statement = connection.prepareStatement("SELECT id, title, done, due_at, category FROM todos ORDER BY id");
              ResultSet result = statement.executeQuery()) {
-            while (result.next()) todos.add(new Todo(result.getInt("id"), result.getString("title"), result.getInt("done") != 0, result.getString("due_at")));
+            while (result.next()) todos.add(new Todo(result.getInt("id"), result.getString("title"), result.getInt("done") != 0,
+                    result.getString("due_at"), categoryOrOther(result.getString("category"))));
         }
         return todos;
     }
@@ -157,6 +169,9 @@ public class App {
             comparator = (left, right) -> collator.compare(left.title, right.title);
             if (sort.equals("name-desc")) comparator = comparator.reversed();
             comparator = comparator.thenComparingInt(todo -> todo.id);
+        } else if (sort.equals("category")) {
+            comparator = Comparator.comparingInt((Todo todo) -> CATEGORIES.indexOf(todo.category))
+                    .thenComparingInt(todo -> todo.id);
         } else comparator = Comparator.comparingInt((Todo todo) -> todo.id).reversed();
         todos.sort(comparator);
     }
@@ -165,15 +180,31 @@ public class App {
         return "done".equals(value) || "undone".equals(value) ? value : "all";
     }
     private static String normalizeSort(String value) {
-        return "oldest".equals(value) || "name-asc".equals(value) || "name-desc".equals(value) ? value : "newest";
+        return "oldest".equals(value) || "name-asc".equals(value) || "name-desc".equals(value)
+                || "category".equals(value) ? value : "newest";
     }
     private static String normalizeDueAt(String value) {
         if (value == null || value.isBlank()) return null;
         try { return LocalDateTime.parse(value).toString(); }
         catch (DateTimeParseException ignored) { return null; }
     }
+    private static String normalizeCategory(String value) {
+        return CATEGORIES.contains(value) ? value : null;
+    }
+    private static String categoryOrOther(String value) {
+        String category = normalizeCategory(value);
+        return category == null ? "その他" : category;
+    }
+    private static String categoryOptions() {
+        StringBuilder options = new StringBuilder();
+        for (String category : CATEGORIES) {
+            options.append("<option value='").append(escapeHtml(category)).append("'>")
+                    .append(escapeHtml(category)).append("</option>");
+        }
+        return options.toString();
+    }
     private static String formatDueAt(String value) {
-        if (value == null || value.isBlank()) return "未設定";
+        if (value == null || value.isBlank()) return "締切なし";
         try { return LocalDateTime.parse(value).format(DUE_FORMAT); }
         catch (DateTimeParseException ignored) { return value; }
     }
@@ -216,9 +247,9 @@ public class App {
     }
 
     private static class Todo {
-        final int id; final String title; final boolean done; final String dueAt;
-        Todo(int id, String title, boolean done, String dueAt) {
-            this.id = id; this.title = title; this.done = done; this.dueAt = dueAt;
+        final int id; final String title; final boolean done; final String dueAt; final String category;
+        Todo(int id, String title, boolean done, String dueAt, String category) {
+            this.id = id; this.title = title; this.done = done; this.dueAt = dueAt; this.category = category;
         }
     }
 }

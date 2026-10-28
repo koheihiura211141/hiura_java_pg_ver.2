@@ -15,6 +15,7 @@ public class App {
     private static final String DB_URL = "jdbc:sqlite:todos.db";
     private static final List<String> CATEGORIES = List.of("買い物", "家事", "手続き", "仕事", "勉強", "趣味", "予定", "その他");
     private static final DateTimeFormatter DUE_FORMAT = DateTimeFormatter.ofPattern("yyyy年M月d日 HH:mm");
+    private static final DateTimeFormatter HISTORY_FORMAT = DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm");
 
     public static void main(String[] args) throws Exception {
         createTable();
@@ -50,7 +51,16 @@ public class App {
         if (path.equals("/done") && method.equals("GET")) {
             Integer id = queryId(exchange);
             if (id != null)
-                update("UPDATE todos SET done = CASE WHEN done = 1 THEN 0 ELSE 1 END WHERE id = ?", id);
+                toggleDoneWithHistory(id);
+            redirect(exchange);
+            return;
+        }
+        if (path.equals("/title") && method.equals("POST")) {
+            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            Integer id = parseInteger(formValue(body, "id"));
+            String title = formValue(body, "title").trim();
+            if (id != null && !title.isBlank() && title.length() <= 200)
+                updateTitleWithHistory(id, title);
             redirect(exchange);
             return;
         }
@@ -69,7 +79,7 @@ public class App {
             String dueInput = formValue(body, "dueAt");
             String dueAt = normalizeDueAt(dueInput);
             if (id != null && (dueInput.isBlank() || dueAt != null))
-                updateDueAt(id, dueAt);
+                updateDueAtWithHistory(id, dueAt);
             redirect(exchange);
             return;
         }
@@ -78,20 +88,24 @@ public class App {
             Integer id = parseInteger(formValue(body, "id"));
             int priority = normalizePriority(formValue(body, "priority"));
             if (id != null)
-                updatePriority(id, priority);
+                updatePriorityWithHistory(id, priority);
             redirect(exchange);
             return;
         }
         if (path.equals("/delete") && method.equals("GET")) {
             Integer id = queryId(exchange);
             if (id != null)
-                update("DELETE FROM todos WHERE id = ?", id);
+                deleteTodoWithHistory(id);
             redirect(exchange);
             return;
         }
         if (path.equals("/delete-completed") && method.equals("POST")) {
-            deleteCompletedTodos();
+            deleteCompletedTodosWithHistory();
             redirect(exchange);
+            return;
+        }
+        if (path.equals("/history") && method.equals("GET")) {
+            showHistory(exchange);
             return;
         }
         if (path.equals("/") && method.equals("GET")) {
@@ -142,11 +156,11 @@ public class App {
                         input,select{width:100%;height:38px;border:0;border-bottom:1px solid #9aadb2;background:transparent;outline:none}input:focus,select:focus{border-color:var(--ink)}
                         .add-button{border:0;background:var(--ink);color:white;padding:0 24px;font-weight:700;letter-spacing:.12em;cursor:pointer}.add-button:hover{background:#24576a}
                         .toolbar{display:flex;justify-content:flex-end;align-items:center;gap:16px;padding:12px 14px;border-bottom:1px solid var(--line);background:#f7f3ef;flex-wrap:wrap}.sort,.bulk-delete{display:flex;align-items:center;gap:7px;margin:0}.sort span{font-size:12px;font-weight:700}.sort select{width:180px;height:32px}
-                        .toolbar-actions{display:flex;align-items:center;gap:12px}.bulk-delete button{height:32px;border:1px solid var(--accent);background:transparent;color:var(--accent);padding:0 12px;cursor:pointer}.bulk-delete button:hover{background:var(--accent);color:#fff}.bulk-delete button:disabled{border-color:#aaa;color:#999;cursor:not-allowed;background:transparent}
+                        .toolbar-actions{display:flex;align-items:center;gap:12px}.history-link{display:inline-grid;place-items:center;height:32px;padding:0 12px;border:1px solid var(--ink);color:var(--ink);text-decoration:none;font-size:13px;font-weight:700}.history-link:hover{background:var(--ink);color:#fff}.bulk-delete button{height:32px;border:1px solid var(--accent);background:transparent;color:var(--accent);padding:0 12px;cursor:pointer}.bulk-delete button:hover{background:var(--accent);color:#fff}.bulk-delete button:disabled{border-color:#aaa;color:#999;cursor:not-allowed;background:transparent}
                         table{width:100%;border-collapse:collapse;table-layout:fixed}.status-col{width:125px}.due-col{width:155px}.category-col{width:145px}.priority-col{width:135px}.action-col{width:120px}
                         th{height:44px;padding:8px;background:var(--ink);color:white;border-right:1px solid #b4c4c9;font-size:12px;letter-spacing:.15em}th:last-child{border-right:0}.header-filter{margin:0}.header-filter select{height:28px;border:0;border-bottom:1px solid #b4c4c9;background:var(--ink);color:#fff;font-size:12px;font-weight:700;letter-spacing:.08em;text-align:center;text-align-last:center;cursor:pointer}.header-filter option{background:#fff;color:var(--ink)}
                         td{height:64px;padding:10px 14px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:#ffffffc7;vertical-align:middle}td:last-child{border-right:0}.todo-row:last-child td{border-bottom:0}
-                        .check{display:inline-grid;place-items:center;width:25px;height:25px;border:2px solid var(--ink);color:transparent;text-decoration:none}.check:hover{background:#d7e1e2}.done .check{background:var(--ink);color:#fff}.title{font-weight:700;overflow-wrap:anywhere}.done .title{text-decoration:line-through;color:#7d898b}
+                        .check{display:inline-grid;place-items:center;width:25px;height:25px;border:2px solid var(--ink);color:transparent;text-decoration:none}.check:hover{background:#d7e1e2}.done .check{background:var(--ink);color:#fff}.title{font-weight:700;overflow-wrap:anywhere}.title-form{margin:0}.title-input{height:34px;font-weight:700}.done .title-input{text-decoration:line-through;color:#7d898b}
                         time{font-size:13px;color:#4f6268}.due-form,.category-form,.priority-form{margin:0;text-align:center}.due-field{position:relative}.due-input{height:34px;font-size:12px;text-align:center;cursor:pointer}.due-input.no-due{color:transparent}.due-input.no-due:focus{color:var(--ink)}.due-input.no-due::-webkit-datetime-edit{color:transparent}.due-input.no-due:focus::-webkit-datetime-edit{color:var(--ink)}.due-placeholder{position:absolute;inset:0 28px 1px 1px;display:grid;place-items:center;font-size:12px;color:#4f6268;pointer-events:none}.due-field:focus-within .due-placeholder{display:none}.category-select,.priority-select{height:32px;border:1px solid #84989e;border-radius:20px;padding:0 9px;font-size:12px;text-align:center;text-align-last:center;cursor:pointer;background:#fff}.priority-cell{padding-left:8px;padding-right:8px}.priority-select{font-size:15px;letter-spacing:1px;padding-left:9px;padding-right:9px}.actions{display:flex;gap:10px;justify-content:center}.actions a{font-size:13px}.delete{color:var(--accent);text-decoration:none}.empty{padding:60px 20px;text-align:center;background:#ffffffc7;color:var(--muted)}
                         .todo-row.overdue td{background:#fff0ec}.todo-row.overdue .due-input{color:#a63f2d;font-weight:700}.overdue-badge{display:inline-block;margin-top:4px;padding:2px 7px;border-radius:10px;background:var(--accent);color:#fff;font-size:11px;font-weight:700;letter-spacing:.08em}
                         @media(max-width:760px){.page{margin-top:24px}.masthead{align-items:flex-start;flex-direction:column}.summary{text-align:left}.add-form{grid-template-columns:1fr 1fr}.field:first-child{grid-column:1/-1;border-bottom:1px solid var(--line)}.field:nth-child(3){border-right:0}.add-button{grid-column:1/-1;height:48px}.toolbar{align-items:stretch;flex-direction:column}.toolbar-actions{justify-content:space-between;flex-wrap:wrap}.table-wrap{overflow-x:auto}table{min-width:820px}}
@@ -174,6 +188,7 @@ public class App {
                 .append(sortOption("priority-asc", "重要度順（昇順）", sort))
                 .append(sortOption("priority-desc", "重要度順（降順）", sort))
                 .append("</select><noscript><button>適用</button></noscript></form>")
+                .append("<a class='history-link' href='/history'>操作履歴</a>")
                 .append("<form class='bulk-delete' method='post' action='/delete-completed' onsubmit=\"return confirm('本当に削除しますか？')\"><button type='submit'")
                 .append(completed == 0 ? " disabled" : "").append(">完了項目を一括削除</button></form></div></div>");
         html.append("<div class='table-wrap'><table><thead><tr>")
@@ -205,7 +220,11 @@ public class App {
                         .append("</div>")
                         .append(overdue ? "<span class='overdue-badge'>期限切れ</span>" : "")
                         .append("<noscript><button type='submit'>変更</button></noscript></form></td>")
-                        .append("<td class='title'>").append(escapeHtml(todo.title))
+                        .append("<td class='title'><form class='title-form' method='post' action='/title'>")
+                        .append("<input type='hidden' name='id' value='").append(todo.id)
+                        .append("'><input class='title-input' name='title' maxlength='200' required aria-label='Todoタイトル' value='")
+                        .append(escapeHtml(todo.title)).append("' onchange='this.form.submit()'>")
+                        .append("<noscript><button type='submit'>変更</button></noscript></form>")
                         .append("</td><td><form class='category-form' method='post' action='/category'>")
                         .append("<input type='hidden' name='id' value='").append(todo.id)
                         .append("'><select class='category-select' name='category' aria-label='")
@@ -227,6 +246,44 @@ public class App {
         send(exchange, 200, "text/html; charset=UTF-8", html.toString());
     }
 
+    private static void showHistory(HttpExchange exchange) throws IOException, SQLException {
+        // DBから直近50件を読み込み、取得した順番（新しい順）でHTMLへ追加します。
+        List<HistoryEntry> history = selectHistory();
+        StringBuilder html = new StringBuilder("""
+                <!doctype html><html lang='ja'><head><meta charset='UTF-8'>
+                <meta name='viewport' content='width=device-width,initial-scale=1'><title>操作履歴</title><style>
+                :root{--ink:#153f50;--line:#55727c;--paper:#e9dfd8;--accent:#b75f4a}
+                *{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:"Yu Gothic","Hiragino Kaku Gothic ProN",sans-serif;min-height:100vh}
+                .page{width:min(760px,calc(100% - 32px));margin:42px auto 64px}header{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-bottom:18px}h1{margin:0;font-size:42px;letter-spacing:.08em}
+                .back{display:inline-grid;place-items:center;height:38px;padding:0 16px;border:1px solid var(--ink);color:var(--ink);text-decoration:none;font-weight:700}.back:hover{background:var(--ink);color:#fff}
+                .history{list-style:none;margin:0;padding:0;border:1px solid var(--line);background:#ffffff80;box-shadow:7px 7px 0 #153f5014}.item{padding:18px 20px;border-bottom:1px solid var(--line);background:#ffffffc7}.item:last-child{border-bottom:0}.date{font-size:13px;color:#5c6c71;margin-bottom:7px}.message{font-weight:700}.action{color:var(--accent)}.changes{margin-top:8px;padding-left:14px;border-left:3px solid #c8b9b0;font-size:13px;line-height:1.7}.empty{padding:50px 20px;text-align:center;color:#6d7779}
+                @media(max-width:600px){.page{margin-top:24px}header{align-items:flex-start;flex-direction:column}h1{font-size:34px}}
+                </style></head><body><main class='page'><header><h1>操作履歴</h1><a class='back' href='/'>Todo一覧に戻る</a></header>
+                """);
+        if (history.isEmpty()) {
+            html.append("<div class='history empty'>操作履歴はまだありません</div>");
+        } else {
+            html.append("<ol class='history'>");
+            for (HistoryEntry entry : history) {
+                html.append("<li class='item'><div class='date'>")
+                        .append(escapeHtml(formatHistoryDate(entry.operatedAt))).append("</div>")
+                        .append("<div class='message'><span class='action'>【")
+                        .append(escapeHtml(entry.action)).append("】</span>「")
+                        .append(escapeHtml(entry.todoTitle)).append("」")
+                        .append(escapeHtml(historyActionSuffix(entry.action))).append("</div>");
+                if (entry.oldValue != null || entry.newValue != null)
+                    html.append("<div class='changes'>変更前：")
+                            .append(escapeHtml(displayHistoryValue(entry.oldValue))).append("<br>変更後：")
+                            .append(escapeHtml(displayHistoryValue(entry.newValue))).append("</div>");
+                html.append("</li>");
+            }
+            html.append("</ol>");
+        }
+        html.append("</main></body></html>");
+        // Content-TypeにUTF-8を指定して、日本語を文字化けせずブラウザへ送ります。
+        send(exchange, 200, "text/html; charset=UTF-8", html.toString());
+    }
+
     private static void createTable() throws SQLException {
         try (Connection c = DriverManager.getConnection(DB_URL); Statement s = c.createStatement()) {
             s.execute(
@@ -237,6 +294,18 @@ public class App {
                 s.execute("ALTER TABLE todos ADD COLUMN category TEXT DEFAULT 'その他'");
             if (!hasColumn(c, "priority"))
                 s.execute("ALTER TABLE todos ADD COLUMN priority INTEGER NOT NULL DEFAULT 1");
+            // Todoを削除しても履歴を残すため、外部キーは設定せずTodo IDを数値として保存します。
+            s.execute("""
+                    CREATE TABLE IF NOT EXISTS operation_history (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        operated_at TEXT NOT NULL,
+                        todo_id INTEGER NOT NULL,
+                        todo_title TEXT NOT NULL,
+                        action TEXT NOT NULL,
+                        old_value TEXT,
+                        new_value TEXT
+                    )
+                    """);
         }
     }
 
@@ -250,22 +319,24 @@ public class App {
     }
 
     private static void insertTodo(String title, String dueAt, String category, int priority) throws SQLException {
-        try (Connection c = DriverManager.getConnection(DB_URL);
-                PreparedStatement s = c
-                        .prepareStatement("INSERT INTO todos (title, done, due_at, category, priority) VALUES (?, 0, ?, ?, ?)")) {
-            s.setString(1, title);
-            s.setString(2, dueAt);
-            s.setString(3, category);
-            s.setInt(4, priority);
-            s.executeUpdate();
-        }
-    }
-
-    private static void update(String sql, int id) throws SQLException {
-        try (Connection c = DriverManager.getConnection(DB_URL); PreparedStatement s = c.prepareStatement(sql)) {
-            s.setInt(1, id);
-            s.executeUpdate();
-        }
+        runInTransaction(c -> {
+            // RETURN_GENERATED_KEYSを指定すると、追加されたTodoのIDを直後に取得できます。
+            try (PreparedStatement s = c.prepareStatement(
+                    "INSERT INTO todos (title, done, due_at, category, priority) VALUES (?, 0, ?, ?, ?)",
+                    Statement.RETURN_GENERATED_KEYS)) {
+                s.setString(1, title);
+                s.setString(2, dueAt);
+                s.setString(3, category);
+                s.setInt(4, priority);
+                if (s.executeUpdate() == 1) {
+                    try (ResultSet keys = s.getGeneratedKeys()) {
+                        if (!keys.next())
+                            throw new SQLException("追加したTodoのIDを取得できませんでした");
+                        saveHistory(c, keys.getInt(1), title, "追加", null, null);
+                    }
+                }
+            }
+        });
     }
 
     private static void updateCategory(int id, String category) throws SQLException {
@@ -277,29 +348,146 @@ public class App {
         }
     }
 
-    private static void updateDueAt(int id, String dueAt) throws SQLException {
-        try (Connection c = DriverManager.getConnection(DB_URL);
-                PreparedStatement s = c.prepareStatement("UPDATE todos SET due_at = ? WHERE id = ?")) {
-            s.setString(1, dueAt);
-            s.setInt(2, id);
+    private static void toggleDoneWithHistory(int id) throws SQLException {
+        runInTransaction(c -> {
+            Todo todo = selectTodo(c, id);
+            if (todo == null)
+                return;
+            boolean newDone = !todo.done;
+            try (PreparedStatement s = c.prepareStatement("UPDATE todos SET done = ? WHERE id = ?")) {
+                s.setInt(1, newDone ? 1 : 0);
+                s.setInt(2, id);
+                if (s.executeUpdate() == 1)
+                    saveHistory(c, id, todo.title, newDone ? "完了" : "未完了", null, null);
+            }
+        });
+    }
+
+    private static void updateTitleWithHistory(int id, String title) throws SQLException {
+        runInTransaction(c -> {
+            Todo todo = selectTodo(c, id);
+            // 値が同じ場合はデータを変更せず、履歴も保存しません。
+            if (todo == null || Objects.equals(todo.title, title))
+                return;
+            try (PreparedStatement s = c.prepareStatement("UPDATE todos SET title = ? WHERE id = ?")) {
+                s.setString(1, title);
+                s.setInt(2, id);
+                if (s.executeUpdate() == 1)
+                    saveHistory(c, id, title, "タイトル変更", todo.title, title);
+            }
+        });
+    }
+
+    private static void updateDueAtWithHistory(int id, String dueAt) throws SQLException {
+        runInTransaction(c -> {
+            Todo todo = selectTodo(c, id);
+            if (todo == null || Objects.equals(todo.dueAt, dueAt))
+                return;
+            try (PreparedStatement s = c.prepareStatement("UPDATE todos SET due_at = ? WHERE id = ?")) {
+                s.setString(1, dueAt);
+                s.setInt(2, id);
+                if (s.executeUpdate() == 1)
+                    saveHistory(c, id, todo.title, "期限変更", todo.dueAt, dueAt);
+            }
+        });
+    }
+
+    private static void updatePriorityWithHistory(int id, int priority) throws SQLException {
+        runInTransaction(c -> {
+            Todo todo = selectTodo(c, id);
+            if (todo == null || todo.priority == priority)
+                return;
+            try (PreparedStatement s = c.prepareStatement("UPDATE todos SET priority = ? WHERE id = ?")) {
+                s.setInt(1, priority);
+                s.setInt(2, id);
+                if (s.executeUpdate() == 1)
+                    saveHistory(c, id, todo.title, "優先度変更", Integer.toString(todo.priority),
+                            Integer.toString(priority));
+            }
+        });
+    }
+
+    private static void deleteTodoWithHistory(int id) throws SQLException {
+        runInTransaction(c -> {
+            Todo todo = selectTodo(c, id);
+            if (todo == null)
+                return;
+            try (PreparedStatement s = c.prepareStatement("DELETE FROM todos WHERE id = ?")) {
+                s.setInt(1, id);
+                if (s.executeUpdate() == 1)
+                    saveHistory(c, id, todo.title, "削除", null, null);
+            }
+        });
+    }
+
+    private static void deleteCompletedTodosWithHistory() throws SQLException {
+        runInTransaction(c -> {
+            List<Todo> completed = new ArrayList<>();
+            try (PreparedStatement s = c.prepareStatement(
+                    "SELECT id,title,done,due_at,category,priority FROM todos WHERE done = 1");
+                    ResultSet r = s.executeQuery()) {
+                while (r.next())
+                    completed.add(todoFromResultSet(r));
+            }
+            try (PreparedStatement s = c.prepareStatement("DELETE FROM todos WHERE id = ?")) {
+                for (Todo todo : completed) {
+                    s.setInt(1, todo.id);
+                    if (s.executeUpdate() == 1)
+                        saveHistory(c, todo.id, todo.title, "削除", null, null);
+                }
+            }
+        });
+    }
+
+    private static void saveHistory(Connection c, int todoId, String todoTitle, String action,
+            String oldValue, String newValue) throws SQLException {
+        // このINSERT文は、1件の操作履歴をoperation_historyテーブルへ追加します。
+        String sql = "INSERT INTO operation_history "
+                + "(operated_at, todo_id, todo_title, action, old_value, new_value) VALUES (?, ?, ?, ?, ?, ?)";
+        // PreparedStatementは値を「?」へ安全に設定し、文字列をSQLとして誤解されることを防ぎます。
+        try (PreparedStatement s = c.prepareStatement(sql)) {
+            s.setString(1, LocalDateTime.now().toString());
+            s.setInt(2, todoId);
+            s.setString(3, todoTitle);
+            s.setString(4, action);
+            s.setString(5, oldValue);
+            s.setString(6, newValue);
             s.executeUpdate();
         }
     }
 
-    private static void updatePriority(int id, int priority) throws SQLException {
-        try (Connection c = DriverManager.getConnection(DB_URL);
-                PreparedStatement s = c.prepareStatement("UPDATE todos SET priority = ? WHERE id = ?")) {
-            s.setInt(1, priority);
-            s.setInt(2, id);
-            s.executeUpdate();
+    private static void runInTransaction(TransactionWork work) throws SQLException {
+        try (Connection c = DriverManager.getConnection(DB_URL)) {
+            c.setAutoCommit(false);
+            try {
+                // Todoの変更と履歴の追加をまとめて実行し、両方成功したときだけ確定します。
+                work.execute(c);
+                c.commit();
+            } catch (SQLException | RuntimeException e) {
+                // 途中で失敗した場合は変更を取り消し、Todoと履歴の食い違いを防ぎます。
+                try {
+                    c.rollback();
+                } catch (SQLException rollbackError) {
+                    e.addSuppressed(rollbackError);
+                }
+                throw e;
+            }
         }
     }
 
-    private static void deleteCompletedTodos() throws SQLException {
-        try (Connection c = DriverManager.getConnection(DB_URL);
-                PreparedStatement s = c.prepareStatement("DELETE FROM todos WHERE done = 1")) {
-            s.executeUpdate();
+    private static Todo selectTodo(Connection c, int id) throws SQLException {
+        try (PreparedStatement s = c.prepareStatement(
+                "SELECT id,title,done,due_at,category,priority FROM todos WHERE id = ?")) {
+            s.setInt(1, id);
+            try (ResultSet r = s.executeQuery()) {
+                return r.next() ? todoFromResultSet(r) : null;
+            }
         }
+    }
+
+    private static Todo todoFromResultSet(ResultSet r) throws SQLException {
+        return new Todo(r.getInt("id"), r.getString("title"), r.getInt("done") != 0, r.getString("due_at"),
+                categoryOrOther(r.getString("category")), normalizePriority(r.getString("priority")));
     }
 
     private static List<Todo> selectTodos() throws SQLException {
@@ -308,10 +496,50 @@ public class App {
                 PreparedStatement s = c.prepareStatement("SELECT id,title,done,due_at,category,priority FROM todos ORDER BY id");
                 ResultSet r = s.executeQuery()) {
             while (r.next())
-                todos.add(new Todo(r.getInt("id"), r.getString("title"), r.getInt("done") != 0, r.getString("due_at"),
-                        categoryOrOther(r.getString("category")), normalizePriority(r.getString("priority"))));
+                todos.add(todoFromResultSet(r));
         }
         return todos;
+    }
+
+    private static List<HistoryEntry> selectHistory() throws SQLException {
+        List<HistoryEntry> history = new ArrayList<>();
+        // ORDER BY id DESCで新しい履歴を先にし、LIMIT 50で直近50件だけを読み込みます。
+        String sql = "SELECT id,operated_at,todo_id,todo_title,action,old_value,new_value "
+                + "FROM operation_history ORDER BY id DESC LIMIT 50";
+        try (Connection c = DriverManager.getConnection(DB_URL);
+                PreparedStatement s = c.prepareStatement(sql);
+                ResultSet r = s.executeQuery()) {
+            while (r.next())
+                history.add(new HistoryEntry(r.getInt("id"), r.getString("operated_at"), r.getInt("todo_id"),
+                        r.getString("todo_title"), r.getString("action"), r.getString("old_value"),
+                        r.getString("new_value")));
+        }
+        return history;
+    }
+
+    private static String formatHistoryDate(String value) {
+        try {
+            return LocalDateTime.parse(value).format(HISTORY_FORMAT);
+        } catch (DateTimeParseException ignored) {
+            return value;
+        }
+    }
+
+    private static String displayHistoryValue(String value) {
+        return value == null || value.isBlank() ? "なし" : value;
+    }
+
+    private static String historyActionSuffix(String action) {
+        return switch (action) {
+            case "追加" -> "を追加";
+            case "完了" -> "を完了";
+            case "未完了" -> "を未完了に変更";
+            case "削除" -> "を削除";
+            case "タイトル変更" -> "のタイトルを変更";
+            case "期限変更" -> "の期限を変更";
+            case "優先度変更" -> "の優先度を変更";
+            default -> "を変更";
+        };
     }
 
     private static void sortTodos(List<Todo> todos, String sort) {
@@ -593,6 +821,33 @@ public class App {
         e.sendResponseHeaders(status, body.length);
         e.getResponseBody().write(body);
         e.getResponseBody().close();
+    }
+
+    @FunctionalInterface
+    private interface TransactionWork {
+        // トランザクション内で実行したいDB処理を、ラムダ式で渡すための型です。
+        void execute(Connection connection) throws SQLException;
+    }
+
+    private static class HistoryEntry {
+        final int id;
+        final String operatedAt;
+        final int todoId;
+        final String todoTitle;
+        final String action;
+        final String oldValue;
+        final String newValue;
+
+        HistoryEntry(int id, String operatedAt, int todoId, String todoTitle, String action, String oldValue,
+                String newValue) {
+            this.id = id;
+            this.operatedAt = operatedAt;
+            this.todoId = todoId;
+            this.todoTitle = todoTitle;
+            this.action = action;
+            this.oldValue = oldValue;
+            this.newValue = newValue;
+        }
     }
 
     private static class Todo {

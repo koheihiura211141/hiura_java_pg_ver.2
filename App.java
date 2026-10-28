@@ -43,8 +43,9 @@ public class App {
             String dueAt = normalizeDueAt(dueInput);
             String category = normalizeCategory(formValue(body, "category"));
             int priority = normalizePriority(formValue(body, "priority"));
+            String recurrence = normalizeRecurrence(formValue(body, "recurrence"));
             if (!title.isBlank() && (dueInput.isBlank() || dueAt != null) && category != null)
-                insertTodo(title, dueAt, category, priority);
+                insertTodo(title, dueAt, category, priority, recurrence);
             redirect(exchange);
             return;
         }
@@ -151,7 +152,7 @@ public class App {
                         .page{width:min(1080px,calc(100% - 32px));margin:42px auto 64px}.masthead{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin-bottom:12px}
                         h1{margin:0;font-family:"Arial Rounded MT Bold","Trebuchet MS",sans-serif;font-size:clamp(42px,7vw,76px);line-height:.95;letter-spacing:.1em}.flower{font-size:.68em;letter-spacing:0}
                         .summary{text-align:right;font-size:13px;letter-spacing:.08em}.summary strong{font-size:26px}.progress{width:180px;height:5px;background:#cdbfb6;margin-top:8px}.progress span{display:block;height:100%;background:var(--ink)}
-                        .panel{border:1px solid var(--line);background:#ffffff80;box-shadow:7px 7px 0 #153f5014}.add-form{display:grid;grid-template-columns:minmax(220px,1fr) 135px 105px 210px auto;border-bottom:1px solid var(--line)}
+                        .panel{border:1px solid var(--line);background:#ffffff80;box-shadow:7px 7px 0 #153f5014}.add-form{display:grid;grid-template-columns:minmax(220px,1fr) 135px 105px 210px 135px auto;border-bottom:1px solid var(--line)}
                         .field{padding:12px 14px;border-right:1px solid var(--line)}label{display:block;font-size:11px;font-weight:700;letter-spacing:.12em;margin-bottom:6px}input,select,button{font:inherit;color:var(--ink)}
                         input,select{width:100%;height:38px;border:0;border-bottom:1px solid #9aadb2;background:transparent;outline:none}input:focus,select:focus{border-color:var(--ink)}
                         .add-button{border:0;background:var(--ink);color:white;padding:0 24px;font-weight:700;letter-spacing:.12em;cursor:pointer}.add-button:hover{background:#24576a}
@@ -160,7 +161,7 @@ public class App {
                         table{width:100%;border-collapse:collapse;table-layout:fixed}.status-col{width:125px}.due-col{width:155px}.category-col{width:145px}.priority-col{width:135px}.action-col{width:120px}
                         th{height:44px;padding:8px;background:var(--ink);color:white;border-right:1px solid #b4c4c9;font-size:12px;letter-spacing:.15em}th:last-child{border-right:0}.header-filter{margin:0}.header-filter select{height:28px;border:0;border-bottom:1px solid #b4c4c9;background:var(--ink);color:#fff;font-size:12px;font-weight:700;letter-spacing:.08em;text-align:center;text-align-last:center;cursor:pointer}.header-filter option{background:#fff;color:var(--ink)}
                         td{height:64px;padding:10px 14px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:#ffffffc7;vertical-align:middle}td:last-child{border-right:0}.todo-row:last-child td{border-bottom:0}
-                        .check{display:inline-grid;place-items:center;width:25px;height:25px;border:2px solid var(--ink);color:transparent;text-decoration:none}.check:hover{background:#d7e1e2}.done .check{background:var(--ink);color:#fff}.title{font-weight:700;overflow-wrap:anywhere}.title-form{margin:0}.title-input{height:34px;font-weight:700}.done .title-input{text-decoration:line-through;color:#7d898b}
+                        .check{display:inline-grid;place-items:center;width:25px;height:25px;border:2px solid var(--ink);color:transparent;text-decoration:none}.check:hover{background:#d7e1e2}.done .check{background:var(--ink);color:#fff}.title{font-weight:700;overflow-wrap:anywhere}.title-form{margin:0}.title-input{height:34px;font-weight:700}.done .title-input{text-decoration:line-through;color:#7d898b}.recurrence-badge{display:inline-block;margin-top:5px;padding:2px 8px;border:1px solid #6f8991;border-radius:12px;background:#edf3f3;color:#315866;font-size:11px;font-weight:700;letter-spacing:.05em}.done .recurrence-badge{opacity:.65}
                         time{font-size:13px;color:#4f6268}.due-form,.category-form,.priority-form{margin:0;text-align:center}.due-field{position:relative}.due-input{height:34px;font-size:12px;text-align:center;cursor:pointer}.due-input.no-due{color:transparent}.due-input.no-due:focus{color:var(--ink)}.due-input.no-due::-webkit-datetime-edit{color:transparent}.due-input.no-due:focus::-webkit-datetime-edit{color:var(--ink)}.due-placeholder{position:absolute;inset:0 28px 1px 1px;display:grid;place-items:center;font-size:12px;color:#4f6268;pointer-events:none}.due-field:focus-within .due-placeholder{display:none}.category-select,.priority-select{height:32px;border:1px solid #84989e;border-radius:20px;padding:0 9px;font-size:12px;text-align:center;text-align-last:center;cursor:pointer;background:#fff}.priority-cell{padding-left:8px;padding-right:8px}.priority-select{font-size:15px;letter-spacing:1px;padding-left:9px;padding-right:9px}.actions{display:flex;gap:10px;justify-content:center}.actions a{font-size:13px}.delete{color:var(--accent);text-decoration:none}.empty{padding:60px 20px;text-align:center;background:#ffffffc7;color:var(--muted)}
                         .todo-row.overdue td{background:#fff0ec}.todo-row.overdue .due-input{color:#a63f2d;font-weight:700}.overdue-badge{display:inline-block;margin-top:4px;padding:2px 7px;border-radius:10px;background:var(--accent);color:#fff;font-size:11px;font-weight:700;letter-spacing:.08em}
                         @media(max-width:760px){.page{margin-top:24px}.masthead{align-items:flex-start;flex-direction:column}.summary{text-align:left}.add-form{grid-template-columns:1fr 1fr}.field:first-child{grid-column:1/-1;border-bottom:1px solid var(--line)}.field:nth-child(3){border-right:0}.add-button{grid-column:1/-1;height:48px}.toolbar{align-items:stretch;flex-direction:column}.toolbar-actions{justify-content:space-between;flex-wrap:wrap}.table-wrap{overflow-x:auto}table{min-width:820px}}
@@ -175,7 +176,9 @@ public class App {
                 .append(categoryOptions()).append("</select></div>")
                 .append("<div class='field'><label for='priority'>重要度</label><select id='priority' name='priority' aria-label='重要度'>")
                 .append(priorityOptions(1)).append("</select></div>")
-                .append("<div class='field'><label for='dueAt'>締切</label><input id='dueAt' type='datetime-local' name='dueAt'></div><button class='add-button'>追加 ＋</button></form>")
+                .append("<div class='field'><label for='dueAt'>締切</label><input id='dueAt' type='datetime-local' name='dueAt'></div>")
+                .append("<div class='field'><label for='recurrence'>繰り返し</label><select id='recurrence' name='recurrence'>")
+                .append(recurrenceOptions("none")).append("</select></div><button class='add-button'>追加 ＋</button></form>")
                 .append("<div class='toolbar'><div class='toolbar-actions'><form class='sort' method='get'><span>並び替え</span><input type='hidden' name='filter' value='")
                 .append(filter).append("'><input type='hidden' name='categoryFilter' value='")
                 .append(escapeHtml(categoryFilter)).append("'><input type='hidden' name='priorityFilter' value='")
@@ -224,8 +227,11 @@ public class App {
                         .append("<input type='hidden' name='id' value='").append(todo.id)
                         .append("'><input class='title-input' name='title' maxlength='200' required aria-label='Todoタイトル' value='")
                         .append(escapeHtml(todo.title)).append("' onchange='this.form.submit()'>")
-                        .append("<noscript><button type='submit'>変更</button></noscript></form>")
-                        .append("</td><td><form class='category-form' method='post' action='/category'>")
+                        .append("<noscript><button type='submit'>変更</button></noscript></form>");
+                if (!"none".equals(todo.recurrence))
+                    html.append("<span class='recurrence-badge'>↻ ")
+                            .append(recurrenceLabel(todo.recurrence)).append("</span>");
+                html.append("</td><td><form class='category-form' method='post' action='/category'>")
                         .append("<input type='hidden' name='id' value='").append(todo.id)
                         .append("'><select class='category-select' name='category' aria-label='")
                         .append(escapeHtml(todo.title)).append("のカテゴリ' onchange='this.form.submit()'>")
@@ -294,6 +300,10 @@ public class App {
                 s.execute("ALTER TABLE todos ADD COLUMN category TEXT DEFAULT 'その他'");
             if (!hasColumn(c, "priority"))
                 s.execute("ALTER TABLE todos ADD COLUMN priority INTEGER NOT NULL DEFAULT 1");
+            if (!hasColumn(c, "recurrence"))
+                s.execute("ALTER TABLE todos ADD COLUMN recurrence TEXT NOT NULL DEFAULT 'none'");
+            if (!hasColumn(c, "recurrence_generated"))
+                s.execute("ALTER TABLE todos ADD COLUMN recurrence_generated INTEGER NOT NULL DEFAULT 0");
             // Todoを削除しても履歴を残すため、外部キーは設定せずTodo IDを数値として保存します。
             s.execute("""
                     CREATE TABLE IF NOT EXISTS operation_history (
@@ -318,16 +328,17 @@ public class App {
         return false;
     }
 
-    private static void insertTodo(String title, String dueAt, String category, int priority) throws SQLException {
+    private static void insertTodo(String title, String dueAt, String category, int priority, String recurrence) throws SQLException {
         runInTransaction(c -> {
             // RETURN_GENERATED_KEYSを指定すると、追加されたTodoのIDを直後に取得できます。
             try (PreparedStatement s = c.prepareStatement(
-                    "INSERT INTO todos (title, done, due_at, category, priority) VALUES (?, 0, ?, ?, ?)",
+                    "INSERT INTO todos (title, done, due_at, category, priority, recurrence, recurrence_generated) VALUES (?, 0, ?, ?, ?, ?, 0)",
                     Statement.RETURN_GENERATED_KEYS)) {
                 s.setString(1, title);
                 s.setString(2, dueAt);
                 s.setString(3, category);
                 s.setInt(4, priority);
+                s.setString(5, recurrence);
                 if (s.executeUpdate() == 1) {
                     try (ResultSet keys = s.getGeneratedKeys()) {
                         if (!keys.next())
@@ -357,10 +368,45 @@ public class App {
             try (PreparedStatement s = c.prepareStatement("UPDATE todos SET done = ? WHERE id = ?")) {
                 s.setInt(1, newDone ? 1 : 0);
                 s.setInt(2, id);
-                if (s.executeUpdate() == 1)
+                if (s.executeUpdate() == 1) {
                     saveHistory(c, id, todo.title, newDone ? "完了" : "未完了", null, null);
+                    if (newDone && !"none".equals(todo.recurrence) && !todo.recurrenceGenerated)
+                        createNextRecurringTodo(c, todo);
+                }
             }
         });
+    }
+
+    private static void createNextRecurringTodo(Connection c, Todo todo) throws SQLException {
+        LocalDateTime base = todo.dueAt == null || todo.dueAt.isBlank()
+                ? LocalDateTime.now()
+                : LocalDateTime.parse(todo.dueAt);
+        LocalDateTime nextDue = switch (todo.recurrence) {
+            case "daily" -> base.plusDays(1);
+            case "weekly" -> base.plusWeeks(1);
+            case "monthly" -> base.plusMonths(1);
+            default -> throw new IllegalArgumentException("不正な繰り返し種別です: " + todo.recurrence);
+        };
+        try (PreparedStatement insert = c.prepareStatement(
+                "INSERT INTO todos (title, done, due_at, category, priority, recurrence, recurrence_generated) VALUES (?, 0, ?, ?, ?, ?, 0)",
+                Statement.RETURN_GENERATED_KEYS);
+                PreparedStatement mark = c.prepareStatement(
+                        "UPDATE todos SET recurrence_generated = 1 WHERE id = ? AND recurrence_generated = 0")) {
+            insert.setString(1, todo.title);
+            insert.setString(2, nextDue.toString());
+            insert.setString(3, todo.category);
+            insert.setInt(4, todo.priority);
+            insert.setString(5, todo.recurrence);
+            insert.executeUpdate();
+            try (ResultSet keys = insert.getGeneratedKeys()) {
+                if (!keys.next())
+                    throw new SQLException("次回TodoのIDを取得できませんでした");
+                saveHistory(c, keys.getInt(1), todo.title, "追加", null, null);
+            }
+            mark.setInt(1, todo.id);
+            if (mark.executeUpdate() != 1)
+                throw new SQLException("繰り返しTodoの生成状態を更新できませんでした");
+        }
     }
 
     private static void updateTitleWithHistory(int id, String title) throws SQLException {
@@ -424,7 +470,7 @@ public class App {
         runInTransaction(c -> {
             List<Todo> completed = new ArrayList<>();
             try (PreparedStatement s = c.prepareStatement(
-                    "SELECT id,title,done,due_at,category,priority FROM todos WHERE done = 1");
+                    "SELECT id,title,done,due_at,category,priority,recurrence,recurrence_generated FROM todos WHERE done = 1");
                     ResultSet r = s.executeQuery()) {
                 while (r.next())
                     completed.add(todoFromResultSet(r));
@@ -477,7 +523,7 @@ public class App {
 
     private static Todo selectTodo(Connection c, int id) throws SQLException {
         try (PreparedStatement s = c.prepareStatement(
-                "SELECT id,title,done,due_at,category,priority FROM todos WHERE id = ?")) {
+                "SELECT id,title,done,due_at,category,priority,recurrence,recurrence_generated FROM todos WHERE id = ?")) {
             s.setInt(1, id);
             try (ResultSet r = s.executeQuery()) {
                 return r.next() ? todoFromResultSet(r) : null;
@@ -487,13 +533,14 @@ public class App {
 
     private static Todo todoFromResultSet(ResultSet r) throws SQLException {
         return new Todo(r.getInt("id"), r.getString("title"), r.getInt("done") != 0, r.getString("due_at"),
-                categoryOrOther(r.getString("category")), normalizePriority(r.getString("priority")));
+                categoryOrOther(r.getString("category")), normalizePriority(r.getString("priority")),
+                normalizeRecurrence(r.getString("recurrence")), r.getInt("recurrence_generated") != 0);
     }
 
     private static List<Todo> selectTodos() throws SQLException {
         List<Todo> todos = new ArrayList<>();
         try (Connection c = DriverManager.getConnection(DB_URL);
-                PreparedStatement s = c.prepareStatement("SELECT id,title,done,due_at,category,priority FROM todos ORDER BY id");
+                PreparedStatement s = c.prepareStatement("SELECT id,title,done,due_at,category,priority,recurrence,recurrence_generated FROM todos ORDER BY id");
                 ResultSet r = s.executeQuery()) {
             while (r.next())
                 todos.add(todoFromResultSet(r));
@@ -692,6 +739,30 @@ public class App {
         return out.toString();
     }
 
+    private static String recurrenceOptions(String selected) {
+        StringBuilder out = new StringBuilder();
+        String[][] options = { { "none", "当日のみ" }, { "daily", "毎日" },
+                { "weekly", "毎週" }, { "monthly", "毎月" } };
+        for (String[] option : options)
+            out.append("<option value='").append(option[0]).append("'")
+                    .append(option[0].equals(selected) ? " selected" : "").append(">")
+                    .append(option[1]).append("</option>");
+        return out.toString();
+    }
+
+    private static String normalizeRecurrence(String value) {
+        return Set.of("daily", "weekly", "monthly").contains(value) ? value : "none";
+    }
+
+    private static String recurrenceLabel(String recurrence) {
+        return switch (recurrence) {
+            case "daily" -> "毎日";
+            case "weekly" -> "毎週";
+            case "monthly" -> "毎月";
+            default -> "当日のみ";
+        };
+    }
+
     private static String formatDueAt(String v) {
         if (v == null || v.isBlank())
             return "締切なし";
@@ -857,14 +928,19 @@ public class App {
         final String dueAt;
         final String category;
         final int priority;
+        final String recurrence;
+        final boolean recurrenceGenerated;
 
-        Todo(int id, String title, boolean done, String dueAt, String category, int priority) {
+        Todo(int id, String title, boolean done, String dueAt, String category, int priority,
+                String recurrence, boolean recurrenceGenerated) {
             this.id = id;
             this.title = title;
             this.done = done;
             this.dueAt = dueAt;
             this.category = category;
             this.priority = priority;
+            this.recurrence = recurrence;
+            this.recurrenceGenerated = recurrenceGenerated;
         }
     }
 }

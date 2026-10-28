@@ -107,6 +107,8 @@ public class App {
 
     private static void showList(HttpExchange exchange) throws IOException, SQLException {
         List<Todo> todos = selectTodos();
+        // 画面を作り始めた時点の日時を一度だけ取得し、すべてのTodoを同じ時刻で判定します。
+        LocalDateTime now = LocalDateTime.now();
         String filter = normalizeFilter(queryValue(exchange, "filter"));
         String dueFilter = normalizeDueFilter(queryValue(exchange, "dueFilter"));
         String categoryFilter = normalizeCategoryFilter(queryValue(exchange, "categoryFilter"));
@@ -115,7 +117,7 @@ public class App {
         List<Todo> displayed = new ArrayList<>();
         for (Todo todo : todos) {
             boolean matchesStatus = filter.equals("all") || filter.equals("done") == todo.done;
-            boolean matchesDue = matchesDueFilter(todo, dueFilter);
+            boolean matchesDue = matchesDueFilter(todo, dueFilter, now);
             boolean matchesCategory = categoryFilter.equals("all") || categoryFilter.equals(todo.category);
             boolean matchesPriority = priorityFilter.equals("all")
                     || todo.priority == Integer.parseInt(priorityFilter);
@@ -146,6 +148,7 @@ public class App {
                         td{height:64px;padding:10px 14px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:#ffffffc7;vertical-align:middle}td:last-child{border-right:0}.todo-row:last-child td{border-bottom:0}
                         .check{display:inline-grid;place-items:center;width:25px;height:25px;border:2px solid var(--ink);color:transparent;text-decoration:none}.check:hover{background:#d7e1e2}.done .check{background:var(--ink);color:#fff}.title{font-weight:700;overflow-wrap:anywhere}.done .title{text-decoration:line-through;color:#7d898b}
                         time{font-size:13px;color:#4f6268}.due-form,.category-form,.priority-form{margin:0;text-align:center}.due-field{position:relative}.due-input{height:34px;font-size:12px;text-align:center;cursor:pointer}.due-input.no-due{color:transparent}.due-input.no-due:focus{color:var(--ink)}.due-input.no-due::-webkit-datetime-edit{color:transparent}.due-input.no-due:focus::-webkit-datetime-edit{color:var(--ink)}.due-placeholder{position:absolute;inset:0 28px 1px 1px;display:grid;place-items:center;font-size:12px;color:#4f6268;pointer-events:none}.due-field:focus-within .due-placeholder{display:none}.category-select,.priority-select{height:32px;border:1px solid #84989e;border-radius:20px;padding:0 9px;font-size:12px;text-align:center;text-align-last:center;cursor:pointer;background:#fff}.priority-cell{padding-left:8px;padding-right:8px}.priority-select{font-size:15px;letter-spacing:1px;padding-left:9px;padding-right:9px}.actions{display:flex;gap:10px;justify-content:center}.actions a{font-size:13px}.delete{color:var(--accent);text-decoration:none}.empty{padding:60px 20px;text-align:center;background:#ffffffc7;color:var(--muted)}
+                        .todo-row.overdue td{background:#fff0ec}.todo-row.overdue .due-input{color:#a63f2d;font-weight:700}.overdue-badge{display:inline-block;margin-top:4px;padding:2px 7px;border-radius:10px;background:var(--accent);color:#fff;font-size:11px;font-weight:700;letter-spacing:.08em}
                         @media(max-width:760px){.page{margin-top:24px}.masthead{align-items:flex-start;flex-direction:column}.summary{text-align:left}.add-form{grid-template-columns:1fr 1fr}.field:first-child{grid-column:1/-1;border-bottom:1px solid var(--line)}.field:nth-child(3){border-right:0}.add-button{grid-column:1/-1;height:48px}.toolbar{align-items:stretch;flex-direction:column}.toolbar-actions{justify-content:space-between;flex-wrap:wrap}.table-wrap{overflow-x:auto}table{min-width:820px}}
                         </style></head><body><main class='page'><header class='masthead'><h1>TODO LIST<span class='flower'>✿</span></h1>
                         """);
@@ -183,7 +186,10 @@ public class App {
             html.append("<tr><td class='empty' colspan='6'>該当するタスクはありません</td></tr>");
         } else {
             for (Todo todo : displayed) {
-                html.append("<tr class='todo-row").append(todo.done ? " done" : "").append("'><td>");
+                // 未完了で期限を過ぎたTodoには専用のCSSクラスを付け、ブラウザで見分けられるようにします。
+                boolean overdue = isOverdue(todo, now);
+                html.append("<tr class='todo-row").append(todo.done ? " done" : "")
+                        .append(overdue ? " overdue" : "").append("'><td>");
                 html.append("<a class='check' aria-label='").append(todo.done ? "未完了に戻す" : "完了にする")
                         .append("' href='/done?id=").append(todo.id).append("'>✓</a>");
                 html.append(
@@ -196,7 +202,9 @@ public class App {
                         .append(escapeHtml(todo.dueAt == null ? "" : todo.dueAt))
                         .append("' onchange='this.form.submit()'>")
                         .append(todo.dueAt == null ? "<span class='due-placeholder'>締切なし</span>" : "")
-                        .append("</div><noscript><button type='submit'>変更</button></noscript></form></td>")
+                        .append("</div>")
+                        .append(overdue ? "<span class='overdue-badge'>期限切れ</span>" : "")
+                        .append("<noscript><button type='submit'>変更</button></noscript></form></td>")
                         .append("<td class='title'>").append(escapeHtml(todo.title))
                         .append("</td><td><form class='category-form' method='post' action='/category'>")
                         .append("<input type='hidden' name='id' value='").append(todo.id)
@@ -344,7 +352,7 @@ public class App {
         return "overdue".equals(v) || "upcoming".equals(v) || "none".equals(v) ? v : "all";
     }
 
-    private static boolean matchesDueFilter(Todo todo, String dueFilter) {
+    private static boolean matchesDueFilter(Todo todo, String dueFilter, LocalDateTime now) {
         if ("all".equals(dueFilter))
             return true;
         if ("none".equals(dueFilter))
@@ -353,8 +361,22 @@ public class App {
             return false;
         try {
             LocalDateTime dueAt = LocalDateTime.parse(todo.dueAt);
-            return "overdue".equals(dueFilter) ? dueAt.isBefore(LocalDateTime.now()) : !dueAt.isBefore(LocalDateTime.now());
+            // 「期限切れ」フィルターにも、画面表示と同じ未完了条件を適用します。
+            return "overdue".equals(dueFilter) ? isOverdue(todo, now) : !dueAt.isBefore(now);
         } catch (DateTimeParseException ignored) {
+            return false;
+        }
+    }
+
+    private static boolean isOverdue(Todo todo, LocalDateTime now) {
+        // 完了済み、または期限が設定されていないTodoは期限切れではありません。
+        if (todo.done || todo.dueAt == null || todo.dueAt.isBlank())
+            return false;
+        try {
+            // 保存済みの期限を日時に変換し、現在日時より前なら期限切れです。
+            return LocalDateTime.parse(todo.dueAt).isBefore(now);
+        } catch (DateTimeParseException ignored) {
+            // 不正な期限データがあっても画面を壊さず、期限切れではないものとして扱います。
             return false;
         }
     }
